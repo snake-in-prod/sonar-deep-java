@@ -40,7 +40,9 @@ public class ModifiedInForEachCheck extends DeepCheck {
       iterated = Trees.receiver(view);
       mapView = true;
     }
-    if (Trees.symbol(iterated) == null || iterated.symbolType().fullyQualifiedName().matches(".*(Concurrent|CopyOnWrite).*")) {
+    String type = iterated.symbolType().fullyQualifiedName();
+    // only JDK collections: a project collection may iterate over a copy
+    if (Trees.symbol(iterated) == null || !type.startsWith("java.util.") || type.matches(".*(Concurrent|CopyOnWrite).*")) {
       return;
     }
     for (MethodInvocationTree m : Trees.collect(loop.statement(), MethodInvocationTree.class)) {

@@ -403,8 +403,13 @@ final class ProjectAnalyses implements Opcodes {
           continue;
         }
         for (Method target : targets) {
+          Set<String> heldNow = canonical(lc.locks());
           for (String acq : canonical(acquired(target, 0))) {
-            for (String held : canonical(lc.locks())) {
+            if (heldNow.contains(acq)) {
+              // re-entering a monitor that is already held adds no new order
+              continue;
+            }
+            for (String held : heldNow) {
               if (!held.equals(acq)) {
                 graph.putIfAbsent(held + "->" + acq, new Site(m.owner(), lc.line()));
               }
