@@ -99,7 +99,7 @@ final class ProjectAnalyses implements Opcodes {
     ignored.forEach((k, sites) -> {
       Summaries.Call c = Summaries.parse(k);
       // only project methods: JDK results such as Iterator.next() are often skipped on purpose
-      if (c.desc().endsWith(")L" + c.owner() + ";") || s.targets(k).isEmpty()) {
+      if (c.desc().endsWith(")L" + c.owner() + ";") || s.targets(k).isEmpty() || s.neverReturns(k)) {
         return;
       }
       int u = used.getOrDefault(k, 0);
@@ -185,7 +185,8 @@ final class ProjectAnalyses implements Opcodes {
     Map<String, List<Access>> byField = new HashMap<>();
     for (Method m : methods) {
       for (FieldAccess a : m.facts().locks().accesses()) {
-        byField.computeIfAbsent(a.field(), k -> new ArrayList<>()).add(new Access(m, a, !a.locks().isEmpty() || lockContext.contains(m)));
+        FieldAccess c = new FieldAccess(a.field(), a.write(), a.line(), canonical(a.locks()));
+        byField.computeIfAbsent(a.field(), k -> new ArrayList<>()).add(new Access(m, c, !a.locks().isEmpty() || lockContext.contains(m)));
       }
     }
     byField.forEach((key, accesses) -> {
@@ -253,7 +254,7 @@ final class ProjectAnalyses implements Opcodes {
   private boolean holds(Set<String> held, String guard, String fieldKey) {
     String owner = fieldKey.substring(0, fieldKey.indexOf('#'));
     for (String h : held) {
-      if (guard.equals("this") && h.equals("this:" + owner)) {
+      if (guard.equals("this") && h.equals(canonical("this:" + owner))) {
         return true;
       }
       if (guard.endsWith(".class") && h.startsWith("class:")) {
@@ -276,6 +277,25 @@ final class ProjectAnalyses implements Opcodes {
     String key = (id.startsWith("lock:") ? id.substring(5) : id.substring(id.indexOf(':') + 1)).replaceAll("\\.(readLock|writeLock)$", "");
     FieldFacts f = key.contains("#") ? field(key) : null;
     return f != null && (f.access() & ACC_STATIC) == 0;
+  }
+
+  /** {@code this:Sub} and {@code this:Base} are the same object: use the top project superclass. */
+  private String canonical(String id) {
+    if (!id.startsWith("this:")) {
+      return id;
+    }
+    ClassFacts c = s.classes().get(id.substring(5));
+    String top = id.substring(5);
+    for (; c != null; c = superOf(c)) {
+      top = c.name();
+    }
+    return "this:" + top;
+  }
+
+  private Set<String> canonical(Set<String> ids) {
+    Set<String> out = new HashSet<>();
+    ids.forEach(i -> out.add(canonical(i)));
+    return out;
   }
 
   private static String lockName(String id) {
@@ -371,7 +391,11 @@ final class ProjectAnalyses implements Opcodes {
     Map<String, Site> graph = new LinkedHashMap<>();
     for (Method m : methods) {
       for (LockEdge e : m.facts().locks().edges()) {
-        graph.putIfAbsent(e.held() + "->" + e.acquired(), new Site(m.owner(), e.line()));
+        String held = canonical(e.held());
+        String acq = canonical(e.acquired());
+        if (!held.equals(acq)) {
+          graph.putIfAbsent(held + "->" + acq, new Site(m.owner(), e.line()));
+        }
       }
       for (LockedCall lc : m.facts().locks().lockedCalls()) {
         List<Method> targets = s.targets(lc.callKey());
@@ -379,8 +403,8 @@ final class ProjectAnalyses implements Opcodes {
           continue;
         }
         for (Method target : targets) {
-          for (String acq : acquired(target, 0)) {
-            for (String held : lc.locks()) {
+          for (String acq : canonical(acquired(target, 0))) {
+            for (String held : canonical(lc.locks())) {
               if (!held.equals(acq)) {
                 graph.putIfAbsent(held + "->" + acq, new Site(m.owner(), lc.line()));
               }

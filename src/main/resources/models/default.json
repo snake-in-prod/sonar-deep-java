@@ -101,7 +101,6 @@
     "java/net/URI#create": "java/lang/IllegalArgumentException",
     "java/util/Optional#get": "java/util/NoSuchElementException",
     "java/util/Optional#orElseThrow()Ljava/lang/Object;": "java/util/NoSuchElementException",
-    "java/util/Iterator#next": "java/util/NoSuchElementException",
     "java/util/Scanner#nextInt": "java/util/InputMismatchException",
     "java/util/Scanner#nextLine": "java/util/NoSuchElementException",
     "java/time/LocalDate#parse": "java/time/format/DateTimeParseException",

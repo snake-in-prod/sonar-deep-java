@@ -54,7 +54,17 @@
     "*#getPrivateKey": "SECRET",
     "*#getAccessToken": "SECRET",
     "*#getRefreshToken": "SECRET",
-    "*#getCredentials": "SECRET"
+    "*#getCredentials": "SECRET",
+    "javax/servlet/ServletRequest#getParameterNames": "USER",
+    "javax/servlet/http/HttpServletRequest#getParameterNames": "USER",
+    "javax/servlet/http/HttpServletRequest#getHeaderNames": "USER",
+    "javax/servlet/http/HttpServletRequest#getRemoteUser": "USER",
+    "javax/servlet/http/HttpServletRequest#getPathTranslated": "USER",
+    "jakarta/servlet/ServletRequest#getParameterNames": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getParameterNames": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getHeaderNames": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getRemoteUser": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getPathTranslated": "USER"
   },
   "sourceParameterAnnotations": {
     "RequestParam": "USER",
@@ -215,7 +225,9 @@
     "java/lang/Runtime#exec": {
       "kind": "COMMAND",
       "args": [
-        0
+        0,
+        1,
+        2
       ]
     },
     "java/lang/ProcessBuilder#<init>": {
@@ -753,6 +765,42 @@
       "args": [
         0
       ]
+    },
+    "org/springframework/jdbc/core/JdbcTemplate#queryForRowSet": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/jdbc/core/JdbcTemplate#queryForLong": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/jdbc/core/JdbcTemplate#queryForInt": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#newInputStream": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#newOutputStream": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#readAllBytes": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
     }
   },
   "propagators": {
@@ -813,7 +861,25 @@
     "java/lang/Short#parseShort": "numeric",
     "java/lang/Integer#intValue": "numeric",
     "java/lang/Long#intValue": "numeric",
-    "java/lang/String#length": "numeric"
+    "java/util/Enumeration": "receiver",
+    "org/apache/commons/codec/binary/Base64": "args",
+    "org/apache/commons/codec/binary/Base64#<init>": "args",
+    "java/util/Base64$Encoder": "args",
+    "java/util/ArrayList#<init>": "args",
+    "java/util/HashMap#<init>": "args",
+    "java/util/LinkedList#<init>": "args",
+    "java/util/ArrayList": "receiver",
+    "java/util/HashMap": "receiver",
+    "java/util/LinkedList": "receiver",
+    "java/util/Deque": "receiver",
+    "java/util/Queue": "receiver",
+    "java/lang/ProcessBuilder#<init>": "args",
+    "java/lang/String#getBytes": "receiver",
+    "java/lang/String#toCharArray": "receiver",
+    "java/lang/String#split": "receiver",
+    "java/lang/Object#toString": "receiver",
+    "java/lang/String#toString": "receiver",
+    "org/apache/commons/lang/StringEscapeUtils#unescapeHtml": "args"
   },
   "sanitizers": [
     "java/util/UUID#fromString",
@@ -823,7 +889,6 @@
     "java/lang/Math#clamp",
     "java/util/Objects#checkIndex",
     "*#escape*",
-    "*#encode*",
     "*#sanitize*",
     "*#quote*",
     "*#hash*",
@@ -836,6 +901,13 @@
     "*#forJava*",
     "org/apache/commons/io/FilenameUtils#getName",
     "java/nio/file/Path#getFileName",
-    "java/io/File#getName"
+    "java/io/File#getName",
+    "org/owasp/esapi/Encoder#encodeFor*",
+    "org/owasp/esapi/Encoder#canonicalize",
+    "org/springframework/web/util/HtmlUtils#htmlEscape*",
+    "javax/servlet/http/Cookie#getName",
+    "jakarta/servlet/http/Cookie#getName",
+    "java/lang/String#length",
+    "java/util/Collection#size"
   ]
 }

@@ -32,8 +32,8 @@ public class ResourceFromHelperCheck extends DeepCheck {
   public void visitNode(Tree tree) {
     MethodInvocationTree mit = (MethodInvocationTree) tree;
     Symbol.MethodSymbol sym = mit.methodSymbol();
-    if (sym.isUnknown() || !sym.returnType().type().isSubtypeOf("java.lang.AutoCloseable") || !isRealResource(sym.returnType().type().fullyQualifiedName())
-      || sym.returnType().type().isSubtypeOf("java.util.stream.BaseStream")) {
+    if (sym.isUnknown() || ROOTS.stream().noneMatch(r -> sym.returnType().type().isSubtypeOf(r.replace('/', '.').replace('$', '.')))
+      || !isRealResource(sym.returnType().type().fullyQualifiedName())) {
       return;
     }
     String key = Trees.callKey(sym);
@@ -63,7 +63,7 @@ public class ResourceFromHelperCheck extends DeepCheck {
 
   static boolean fresh(Summaries s, Summaries.Method t, int depth) {
     for (String type : t.facts().nulls().returnedNew()) {
-      if (s.isSubtype(type, "java/lang/AutoCloseable") && isRealResource(type) && !s.isSubtype(type, "java/util/stream/BaseStream")) {
+      if (ROOTS.stream().anyMatch(r -> s.isSubtype(type, r)) && isRealResource(type)) {
         return true;
       }
     }
@@ -78,6 +78,11 @@ public class ResourceFromHelperCheck extends DeepCheck {
     }
     return false;
   }
+
+  /** Types that hold an operating-system or database resource. */
+  static final List<String> ROOTS = List.of("java/io/InputStream", "java/io/OutputStream", "java/io/Reader", "java/io/Writer",
+    "java/nio/channels/Channel", "java/net/Socket", "java/net/ServerSocket", "java/sql/Connection", "java/sql/Statement", "java/sql/ResultSet",
+    "java/util/zip/ZipFile", "java/io/RandomAccessFile", "java/nio/file/FileSystem", "java/nio/file/DirectoryStream", "java/nio/file/WatchService");
 
   /** Buffers in memory need no close(). */
   static boolean isRealResource(String type) {

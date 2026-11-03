@@ -182,7 +182,7 @@ public final class TaintScanner implements Opcodes {
         if (kind != null) {
           labels.add("S" + kind + "|parameter \"" + nameOf(names, p) + "\" of " + m.name + "()|" + where);
         }
-        if (models.isSecretName(nameOf(names, p))) {
+        if (models.isSecretName(nameOf(names, p)) && isSecretType(args[p])) {
           labels.add("SSECRET|parameter \"" + nameOf(names, p) + "\"|" + where);
         }
         if (args[p].getSort() != Type.OBJECT && args[p].getSort() != Type.ARRAY) {
@@ -207,6 +207,12 @@ public final class TaintScanner implements Opcodes {
         step(i, frames[i]);
       }
       return new TaintFacts(Set.copyOf(returns), List.copyOf(sinks.values()), List.copyOf(edges.values()));
+    }
+
+    /** Passwords, keys and tokens are text or bytes; an "apiKey" of another type is an id. */
+    static boolean isSecretType(Type t) {
+      String d = t.getDescriptor();
+      return d.equals("Ljava/lang/String;") || d.equals("[C") || d.equals("[B") || d.equals("Ljava/lang/CharSequence;");
     }
 
     private static String nameOf(List<String> names, int p) {
@@ -252,7 +258,45 @@ public final class TaintScanner implements Opcodes {
       return a == null ? new List[0] : a;
     }
 
+    static Integer intConst(TV v) {
+      String o = v.origin();
+      if (o != null && o.startsWith("I:")) {
+        try {
+          return Integer.valueOf(o.substring(2));
+        } catch (NumberFormatException e) {
+          return null;
+        }
+      }
+      return null;
+    }
+
+    static String keyOf(TV v) {
+      String o = v.origin();
+      return o != null && (o.startsWith("S:") || o.startsWith("I:")) ? o : null;
+    }
+
+    /** Keyed labels are {@code K<key>~<label>}; a constant key selects its own, any other key sees all. */
+    static Set<String> mapGet(Set<String> labels, String key) {
+      Set<String> out = new HashSet<>();
+      for (String l : labels) {
+        if (l.startsWith("K")) {
+          int sep = l.indexOf('~');
+          if (key == null || l.substring(1, sep).equals(key)) {
+            out.add(l.substring(sep + 1));
+          }
+        } else {
+          out.add(l);
+        }
+      }
+      return Set.copyOf(out);
+    }
+
+    static Set<String> unkeyed(Set<String> labels) {
+      return labels.stream().anyMatch(l -> l.startsWith("K")) ? mapGet(labels, null) : labels;
+    }
+
     private void sink(String kind, Set<String> labels, String api) {
+      labels = unkeyed(labels);
       if (!labels.isEmpty()) {
         sinks.merge(current, new Sink(kind, lines[current], labels, api),
           (a, b) -> new Sink(a.kind(), a.line(), union(a.labels(), b.labels()), a.api()));
@@ -295,7 +339,7 @@ public final class TaintScanner implements Opcodes {
           case GETSTATIC:
             FieldInsnNode f = (FieldInsnNode) insn;
             Type t = Type.getType(f.desc);
-            Set<String> l = models.isSecretName(f.name) && !"java/lang/System".equals(f.owner)
+            Set<String> l = models.isSecretName(f.name) && isSecretType(t) && !"java/lang/System".equals(f.owner)
               ? Set.of(source("SECRET", "field \"" + f.name + "\"")) : Set.of();
             return new TV(t.getSize(), l, -1, "static:" + f.owner + "#" + f.name);
           case NEW:
@@ -328,14 +372,16 @@ public final class TaintScanner implements Opcodes {
             FieldInsnNode f = (FieldInsnNode) insn;
             Type t = Type.getType(f.desc);
             Set<String> l = v.labels();
-            if (models.isSecretName(f.name)) {
+            if (models.isSecretName(f.name) && isSecretType(t)) {
               l = union(l, Set.of(source("SECRET", "field \"" + f.name + "\"")));
             }
             return new TV(t.getSize(), BytecodeScanner.isRef(t) ? l : numeric(l), -1, null);
           case NEWARRAY, ANEWARRAY:
             sink("SIZE", v.labels(), "array allocation");
+            return new TV(1, Set.of(), -1, "new@" + current);
+          case ARRAYLENGTH:
             return TV.C1;
-          case ARRAYLENGTH, I2L, I2D, I2F, L2I, L2F, L2D, F2I, F2L, F2D, D2I, D2L, D2F, I2B, I2C, I2S, INEG, LNEG, FNEG, DNEG:
+          case I2L, I2D, I2F, L2I, L2F, L2D, F2I, F2L, F2D, D2I, D2L, D2F, I2B, I2C, I2S, INEG, LNEG, FNEG, DNEG:
             Type r = switch (op) {
               case I2L, F2L, D2L, LNEG, I2D, L2D, F2D, DNEG -> Type.LONG_TYPE;
               default -> Type.INT_TYPE;
@@ -365,8 +411,29 @@ public final class TaintScanner implements Opcodes {
           case LCMP, FCMPL, FCMPG, DCMPL, DCMPG:
             return TV.C1;
           default:
-            return new TV(1, numeric(union(v1.labels(), v2.labels())), -1, null);
+            return new TV(1, numeric(union(v1.labels(), v2.labels())), -1, fold(insn.getOpcode(), v1, v2));
         }
+      }
+
+      /** Constant result of int arithmetic on two constants (for branch pruning), or null. */
+      private String fold(int op, TV a, TV b) {
+        Integer x = intConst(a);
+        Integer y = intConst(b);
+        if (x == null || y == null) {
+          return null;
+        }
+        Integer r = switch (op) {
+          case IADD -> x + y;
+          case ISUB -> x - y;
+          case IMUL -> x * y;
+          case IDIV -> y == 0 ? null : x / y;
+          case IREM -> y == 0 ? null : x % y;
+          case IAND -> x & y;
+          case IOR -> x | y;
+          case IXOR -> x ^ y;
+          default -> null;
+        };
+        return r == null ? null : "I:" + r;
       }
 
       @Override
@@ -411,6 +478,11 @@ public final class TaintScanner implements Opcodes {
               l = union(l, values.get(v).labels());
             }
           }
+          if ("DECISION".equals(sink.kind()) && values.stream().noneMatch(v -> v.origin() != null && v.origin().startsWith("S:"))
+            && !"parseBoolean".equals(mi.name)) {
+            // only a comparison with a constant ("admin") decides on the cookie alone
+            l = Set.of();
+          }
           if ("STDOUT".equals(sink.kind()) && (receiver == null || receiver.origin() == null || !receiver.origin().startsWith("static:java/lang/System#"))) {
             l = Set.of();
           }
@@ -423,8 +495,22 @@ public final class TaintScanner implements Opcodes {
           recordEdge(mi, values);
           return null;
         }
+        if ("java/lang/String".equals(mi.owner) && receiver != null && receiver.origin() != null && receiver.origin().startsWith("S:")) {
+          String text = receiver.origin().substring(2);
+          if ("charAt".equals(mi.name) && intConst(values.get(1)) != null && intConst(values.get(1)) >= 0 && intConst(values.get(1)) < text.length()) {
+            return new TV(1, Set.of(), -1, "I:" + (int) text.charAt(intConst(values.get(1))));
+          }
+          if ("length".equals(mi.name)) {
+            return new TV(1, Set.of(), -1, "I:" + text.length());
+          }
+        }
+        // a map read with a constant key only sees what was put under that key
+        if ("get".equals(mi.name) && receiver != null && values.size() == 2 && mi.owner.matches("java/util/(Map|HashMap|LinkedHashMap|TreeMap|Hashtable)")) {
+          String key = keyOf(values.get(1));
+          return new TV(1, mapGet(receiver.labels(), key), -1, null);
+        }
         String kind = models.source(mi.owner, mi.name);
-        if (kind != null && !(kind.equals("SECRET") && !BytecodeScanner.isRef(ret))) {
+        if (kind != null && !(kind.equals("SECRET") && !isSecretType(ret))) {
           return new TV(ret.getSize(), Set.of(source(kind, display(mi.owner, mi.name))), -1, null);
         }
         if (models.isSanitizer(mi.owner, mi.name) || isCrlfStrip(mi, values)) {
@@ -437,7 +523,10 @@ public final class TaintScanner implements Opcodes {
             case "args" -> argLabels;
             default -> union(receiver == null ? Set.of() : receiver.labels(), argLabels);
           };
-          if ("numeric".equals(p) || !BytecodeScanner.isRef(ret)) {
+          if (!"numeric".equals(p) && !BytecodeScanner.isRef(ret) && !"all".equals(p) && !"args".equals(p)) {
+            // size(), charAt(), hashCode() of a tainted container or string: bounded by real data
+            l = Set.of();
+          } else if ("numeric".equals(p) || !BytecodeScanner.isRef(ret)) {
             l = numeric(l);
           } else if (Type.getType(String.class).equals(ret)) {
             l = Set.copyOf(l.stream().map(x -> x.endsWith("#") ? x.substring(0, x.length() - 1) : x).toList());
@@ -450,6 +539,10 @@ public final class TaintScanner implements Opcodes {
       }
 
       private boolean isCrlfStrip(MethodInsnNode mi, List<? extends TV> values) {
+        return isCrlfStrip0(mi, values);
+      }
+
+      private boolean isCrlfStrip0(MethodInsnNode mi, List<? extends TV> values) {
         if (!"java/lang/String".equals(mi.owner) || !mi.name.startsWith("replace")) {
           return false;
         }
@@ -468,7 +561,7 @@ public final class TaintScanner implements Opcodes {
         }
         List<Set<String>> args = new ArrayList<>();
         for (TV v : values) {
-          args.add(v.labels());
+          args.add(unkeyed(v.labels()));
         }
         boolean exact = mi.getOpcode() == INVOKESTATIC || mi.getOpcode() == INVOKESPECIAL;
         String key = BytecodeScanner.callKey(exact, mi.owner, mi.name, mi.desc);
@@ -483,7 +576,7 @@ public final class TaintScanner implements Opcodes {
 
       @Override
       public void returnOperation(AbstractInsnNode insn, TV value, TV expected) {
-        returns.addAll(value.labels());
+        returns.addAll(unkeyed(value.labels()));
       }
 
       @Override
@@ -532,9 +625,17 @@ public final class TaintScanner implements Opcodes {
         }
         String p = models.propagation(mi.owner, mi.name);
         boolean mutates = ("append".equals(mi.name) || "insert".equals(mi.name)) && "all".equals(p)
+          || p != null && Set.of("add", "addAll", "put", "putAll", "set", "offer", "push", "addFirst", "addLast", "putIfAbsent", "command").contains(mi.name)
           || "<init>".equals(mi.name) && ("args".equals(p) || "all".equals(p) || models.propagation(mi.owner, "<init>") != null);
         if (receiver != null && mutates && !argLabels.isEmpty()) {
-          taintObject(out, receiver, argLabels);
+          if ("put".equals(mi.name) && argc == 2 && keyOf(f.getStack(sp - 2)) != null) {
+            String key = keyOf(f.getStack(sp - 2));
+            Set<String> keyed = new HashSet<>();
+            f.getStack(sp - 1).labels().forEach(l -> keyed.add("K" + key + "~" + l));
+            taintObject(out, receiver, Set.copyOf(keyed));
+          } else {
+            taintObject(out, receiver, argLabels);
+          }
         }
         // allow-list and prefix checks clear the checked value
         if (receiver != null && Set.of("startsWith", "equals", "matches", "equalsIgnoreCase").contains(mi.name)
@@ -546,6 +647,10 @@ public final class TaintScanner implements Opcodes {
         }
       }
 
+      if (op == AASTORE && !f.getStack(sp - 1).labels().isEmpty()) {
+        taintObject(out, f.getStack(sp - 3), f.getStack(sp - 1).labels());
+      }
+
       if (insn instanceof JumpInsnNode j) {
         Frame<TV> next = out;
         if (op >= IF_ICMPEQ && op <= IF_ICMPLE) {
@@ -554,17 +659,65 @@ public final class TaintScanner implements Opcodes {
           next = bound(out, a, b);
           next = bound(next, b, a);
         }
-        flow(insns.indexOf(j.label), next);
-        if (op != GOTO) {
+        Boolean taken = constantJump(op, f, sp);
+        if (taken == null || taken) {
+          flow(insns.indexOf(j.label), next);
+        }
+        if (op != GOTO && (taken == null || !taken)) {
           flow(i + 1, next);
         }
       } else if (insn instanceof TableSwitchInsnNode ts) {
-        flowAll(ts.dflt, ts.labels, out);
+        Integer key = Flow.intConst(f.getStack(sp - 1));
+        if (key == null) {
+          flowAll(ts.dflt, ts.labels, out);
+        } else {
+          flow(insns.indexOf(key >= ts.min && key <= ts.max ? ts.labels.get(key - ts.min) : ts.dflt), out);
+        }
       } else if (insn instanceof LookupSwitchInsnNode ls) {
-        flowAll(ls.dflt, ls.labels, out);
+        Integer key = Flow.intConst(f.getStack(sp - 1));
+        if (key == null) {
+          flowAll(ls.dflt, ls.labels, out);
+        } else {
+          int idx = ls.keys.indexOf(key);
+          flow(insns.indexOf(idx >= 0 ? ls.labels.get(idx) : ls.dflt), out);
+        }
       } else if (!(op >= IRETURN && op <= RETURN) && op != ATHROW) {
         flow(i + 1, out);
       }
+    }
+
+    /** Whether a conditional jump on constants is taken, or null when not constant. */
+    private static Boolean constantJump(int op, Frame<TV> f, int sp) {
+      if (op >= IFEQ && op <= IFLE) {
+        Integer x = intConst(f.getStack(sp - 1));
+        if (x == null) {
+          return null;
+        }
+        return switch (op) {
+          case IFEQ -> x == 0;
+          case IFNE -> x != 0;
+          case IFLT -> x < 0;
+          case IFGE -> x >= 0;
+          case IFGT -> x > 0;
+          default -> x <= 0;
+        };
+      }
+      if (op >= IF_ICMPEQ && op <= IF_ICMPLE) {
+        Integer x = intConst(f.getStack(sp - 2));
+        Integer y = intConst(f.getStack(sp - 1));
+        if (x == null || y == null) {
+          return null;
+        }
+        return switch (op) {
+          case IF_ICMPEQ -> x.equals(y);
+          case IF_ICMPNE -> !x.equals(y);
+          case IF_ICMPLT -> x < y;
+          case IF_ICMPGE -> x >= y;
+          case IF_ICMPGT -> x > y;
+          default -> x <= y;
+        };
+      }
+      return null;
     }
 
     /** {@code x < bound}: a constant or field bound sanitises x; a loop counter compared with x makes x a loop bound. */

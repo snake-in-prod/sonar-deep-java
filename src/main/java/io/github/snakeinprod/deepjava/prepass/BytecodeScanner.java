@@ -324,6 +324,9 @@ public final class BytecodeScanner implements Opcodes {
         case GETFIELD:
           FieldInsnNode f = (FieldInsnNode) insn;
           Type t = Type.getType(f.desc);
+          if (f.name.startsWith("this$")) {
+            return new V(1, false, Set.of(), -3, "this:" + t.getInternalName());
+          }
           return isRef(t) ? new V(1, false, Set.of(), -3, "field:" + f.owner + "#" + f.name) : newValue(t);
         case CHECKCAST:
           return v;
@@ -452,6 +455,9 @@ public final class BytecodeScanner implements Opcodes {
     private final int firstParam;
     private int paramEnd;
 
+    /** Labels reached by a jump, a switch or an exception handler. */
+    private final Set<LabelNode> joins = new HashSet<>();
+
     @SuppressWarnings("unchecked")
     Flow(ClassNode cn, MethodNode m, int maxSteps, boolean switchMap) {
       this.cn = cn;
@@ -478,11 +484,23 @@ public final class BytecodeScanner implements Opcodes {
         lines[i] = line;
       }
       for (TryCatchBlockNode tcb : m.tryCatchBlocks) {
+        joins.add(tcb.handler);
         for (int i = insns.indexOf(tcb.start); i < insns.indexOf(tcb.end); i++) {
           if (handlers[i] == null) {
             handlers[i] = new ArrayList<>();
           }
           handlers[i].add(tcb);
+        }
+      }
+      for (AbstractInsnNode insn : insns) {
+        if (insn instanceof JumpInsnNode j) {
+          joins.add(j.label);
+        } else if (insn instanceof TableSwitchInsnNode ts) {
+          joins.add(ts.dflt);
+          joins.addAll(ts.labels);
+        } else if (insn instanceof LookupSwitchInsnNode ls) {
+          joins.add(ls.dflt);
+          joins.addAll(ls.labels);
         }
       }
     }
@@ -693,10 +711,17 @@ public final class BytecodeScanner implements Opcodes {
     }
 
     /** What follows the call is only a return, a throw or a jump (e.g. {@code fail(); return null;}). */
-    private static boolean nextIsTrivial(AbstractInsnNode call) {
-      AbstractInsnNode insn = real(call.getNext());
-      for (int n = 0; insn != null && n < 12; n++, insn = real(insn.getNext())) {
+    private boolean nextIsTrivial(AbstractInsnNode call) {
+      AbstractInsnNode insn = call.getNext();
+      for (int n = 0; insn != null && n < 24; n++, insn = insn.getNext()) {
+        if (insn instanceof LabelNode l && joins.contains(l)) {
+          // a join point: what follows is also reached from elsewhere
+          return true;
+        }
         int op = insn.getOpcode();
+        if (op < 0) {
+          continue;
+        }
         if ((op >= IRETURN && op <= RETURN) || op == ATHROW || op == GOTO) {
           return true;
         }
@@ -739,7 +764,7 @@ public final class BytecodeScanner implements Opcodes {
         return "this:" + cn.name;
       }
       String o = v.origin();
-      return o != null && (o.startsWith("field:") || o.startsWith("static:") || o.startsWith("class:")) ? o : null;
+      return o != null && (o.startsWith("field:") || o.startsWith("static:") || o.startsWith("class:") || o.startsWith("this:")) ? o : null;
     }
 
     private void step(int i, Frame<V> f) throws AnalyzerException {
