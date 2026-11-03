@@ -63,6 +63,6 @@ public class ModifiedInForEachCheck extends DeepCheck {
       return false;
     }
     List<StatementTree> after = Trees.statementsAfter(block, (StatementTree) stmt);
-    return !after.isEmpty() && after.get(0).is(Tree.Kind.BREAK_STATEMENT, Tree.Kind.RETURN_STATEMENT, Tree.Kind.THROW_STATEMENT);
+    return after.stream().anyMatch(s -> s.is(Tree.Kind.BREAK_STATEMENT, Tree.Kind.RETURN_STATEMENT, Tree.Kind.THROW_STATEMENT));
   }
 }

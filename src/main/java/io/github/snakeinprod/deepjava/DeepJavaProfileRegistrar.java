@@ -8,6 +8,7 @@ public class DeepJavaProfileRegistrar implements ProfileRegistrar {
   @Override
   public void register(RegistrarContext context) {
     context.registerDefaultQualityProfileRules(
-      DeepJavaRulesDefinition.RULE_KEYS.stream().map(k -> RuleKey.of(DeepJavaRulesDefinition.REPOSITORY, k)).toList());
+      DeepJavaRulesDefinition.RULE_KEYS.stream().filter(k -> !Rules.NOT_IN_DEFAULT_PROFILE.contains(k))
+        .map(k -> RuleKey.of(DeepJavaRulesDefinition.REPOSITORY, k)).toList());
   }
 }

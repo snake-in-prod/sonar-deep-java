@@ -166,7 +166,7 @@ final class ProjectAnalyses implements Opcodes {
     }
     for (Method m : methods) {
       List<Boolean> l = sites.get(m.owner().name() + "#" + m.nameDesc());
-      if (l != null && !l.isEmpty() && l.stream().allMatch(b -> b) && (m.facts().info().access() & ACC_PRIVATE) != 0) {
+      if (l != null && !l.isEmpty() && l.stream().allMatch(b -> b) && (m.facts().info().access() & ACC_PUBLIC) == 0) {
         lockContext.add(m);
       }
     }
@@ -445,6 +445,9 @@ final class ProjectAnalyses implements Opcodes {
     escaping.put(m, Map.of());
     Map<String, String> out = new LinkedHashMap<>();
     for (CallSite cs : m.facts().ex().calls()) {
+      if (isLambdaRef(cs)) {
+        continue;
+      }
       Summaries.Call c = Summaries.parse(cs.callKey());
       String ex = s.models().uncheckedThrow(c.owner(), c.name(), c.desc());
       if (ex != null && !caught(cs.caught(), ex)) {
@@ -465,6 +468,11 @@ final class ProjectAnalyses implements Opcodes {
     }
     escaping.put(m, Map.copyOf(out));
     return escaping.get(m);
+  }
+
+  /** A lambda body referenced (not called) where the lambda is created. */
+  private static boolean isLambdaRef(CallSite cs) {
+    return cs.nextLine() == -1 && cs.callKey().contains("#lambda$");
   }
 
   private boolean isEntryPoint(Method m) {
@@ -510,6 +518,9 @@ final class ProjectAnalyses implements Opcodes {
       }
     }
     for (CallSite cs : m.facts().ex().calls()) {
+      if (isLambdaRef(cs)) {
+        continue;
+      }
       List<Method> targets = s.targets(cs.callKey());
       Summaries.Call c = Summaries.parse(cs.callKey());
       if (targets.isEmpty() && s.classes().containsKey(c.owner())) {

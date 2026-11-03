@@ -624,11 +624,13 @@ public final class BytecodeScanner implements Opcodes {
         Set.copyOf(fieldEscapes), Map.copyOf(fieldCalls), Map.copyOf(fieldInits), Set.copyOf(enumLoads), Map.copyOf(switchMapLoads));
       LockFacts lockFacts = new LockFacts(List.copyOf(accesses), List.copyOf(edges), List.copyOf(lockedCalls), Map.copyOf(acquired),
         Set.copyOf(heldAtReturn), Map.copyOf(reacquired));
+      calls.addAll(lambdaRefs);
       ExFacts ex = new ExFacts(List.copyOf(calls), List.copyOf(throwSites), tries());
       return new MethodFacts(info, nulls, uses, lockFacts, ex, ClassFacts.TaintFacts.EMPTY);
     }
 
     private final List<ThrowSite> throwSites = new ArrayList<>();
+    private final Set<CallSite> lambdaRefs = new LinkedHashSet<>();
     private final Set<Integer> throwSeen = new HashSet<>();
 
     /** Local slot to parameter index (0-based, without {@code this}). */
@@ -760,9 +762,18 @@ public final class BytecodeScanner implements Opcodes {
       }
     }
 
-    private String lockId(V v, boolean instanceMethod) {
+    private String lockId(V v, boolean instanceMethod, int insnIndex) {
       if (v.local() == 0 && instanceMethod && "this".equals(v.origin())) {
         return "this:" + cn.name;
+      }
+      if (v.local() > 0 && m.localVariables != null) {
+        // ponytail: a local is identified by its declared type, so two objects of one class share an id
+        for (LocalVariableNode lv : m.localVariables) {
+          if (lv.index == v.local() && insns.indexOf(lv.start) <= insnIndex && insnIndex <= insns.indexOf(lv.end)
+            && lv.desc.startsWith("L")) {
+            return "this:" + lv.desc.substring(1, lv.desc.length() - 1);
+          }
+        }
       }
       String o = v.origin();
       return o != null && (o.startsWith("field:") || o.startsWith("static:") || o.startsWith("class:") || o.startsWith("this:")) ? o : null;
@@ -899,6 +910,16 @@ public final class BytecodeScanner implements Opcodes {
           lockedCalls.add(new LockedCall(callKey(exact, mi.owner, mi.name, mi.desc), held, lines[i]));
         }
       } else if (insn instanceof InvokeDynamicInsnNode indy) {
+        // a lambda created while holding a lock runs (here) under it: lets lock-context cover its body
+        for (Object arg : indy.bsmArgs) {
+          if (arg instanceof org.objectweb.asm.Handle h && h.getOwner().equals(cn.name) && h.getName().startsWith("lambda$")) {
+            String key = callKey(true, h.getOwner(), h.getName(), h.getDesc());
+            lambdaRefs.add(new CallSite(key, lines[i], Set.of(), -1, true));
+            if (!held.isEmpty()) {
+              lockedCalls.add(new LockedCall(key, held, lines[i]));
+            }
+          }
+        }
         int argc = Type.getArgumentTypes(indy.desc).length;
         for (int a = 0; a < argc; a++) {
           String o = f.getStack(sp - 1 - a).origin();
@@ -941,9 +962,9 @@ public final class BytecodeScanner implements Opcodes {
         fieldEscapes.add(top.origin().substring(top.origin().indexOf(':') + 1));
       } else if (op == MONITORENTER) {
         derefs.add(top.local());
-        newLock = lockId(top, instance);
+        newLock = lockId(top, instance, i);
       } else if (op == MONITOREXIT) {
-        releasedLock = lockId(top, instance);
+        releasedLock = lockId(top, instance, i);
       }
 
       out.execute(insn, interp);

@@ -1203,13 +1203,11 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>DereferenceBeforeNullCheck</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>EmptyMapLookup</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>GuardedByViolation</key></rule>
-    <rule><repositoryKey>deepjava</repositoryKey><key>IgnoredResultStatistical</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>InconsistentLocking</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>IndexCheckedAfterUse</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>LockNotReleasedAcrossMethods</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>LockOrderCycle</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>LoopCounterOverflow</key></rule>
-    <rule><repositoryKey>deepjava</repositoryKey><key>MissingSuperCall</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>MixedLocks</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>NarrowingCastOverflow</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>NegativeIndexFromSearch</key></rule>
@@ -1239,7 +1237,6 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedXPath</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TernaryPrecedence</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>UnboundedAuthRetry</key></rule>
-    <rule><repositoryKey>deepjava</repositoryKey><key>UncheckedExceptionInEntryPoint</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>UnreachableCatch</key></rule>
   </rules>
 </profile>

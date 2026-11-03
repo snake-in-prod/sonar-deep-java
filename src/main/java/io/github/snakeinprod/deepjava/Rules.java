@@ -59,6 +59,13 @@ public final class Rules {
 
   private static final String TAINT = " The data flow is followed across methods and files.";
 
+  /**
+   * Rules left out of the default profile: on real projects most of their issues were intended code (see the
+   * benchmark in the README). They stay available for teams that want them.
+   */
+  public static final java.util.Set<String> NOT_IN_DEFAULT_PROFILE = java.util.Set.of(
+    FindingChecks.IgnoredResult.KEY, FindingChecks.MissingSuperCall.KEY, FindingChecks.UncheckedInEntryPoint.KEY);
+
   public static final List<Spec> ALL = List.of(
     // 1. nullness
     bug(NullReturnDereferenceCheck.KEY, "Values that can be null should not be dereferenced across methods", cwe(476, 690),

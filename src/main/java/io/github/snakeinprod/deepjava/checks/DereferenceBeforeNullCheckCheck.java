@@ -68,7 +68,7 @@ public class DereferenceBeforeNullCheckCheck extends DeepCheck {
       for (Map.Entry<Symbol, Integer> d : derefs.entrySet()) {
         for (int j = k + 1; j < body.size(); j++) {
           BinaryExpressionTree b = nullChecks.get(j).get(d.getKey());
-          if (b != null) {
+          if (b != null && !assigned.get(j).contains(d.getKey())) {
             reportIssue(b, "\"" + d.getKey().name() + "\" was already dereferenced at line " + d.getValue()
               + ", so this null check is dead or the dereference is wrong.");
             break;
