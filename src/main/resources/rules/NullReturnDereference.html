@@ -1,0 +1,25 @@
+<p>A method that can return <code>null</code> on some path is called, and its result is dereferenced without a
+null check. The method may be in another file, in another module, or in a library (for example <code>Map.get</code>,
+<code>System.getProperty</code>, <code>BufferedReader.readLine</code>). When it returns <code>null</code>, the
+dereference throws a <code>NullPointerException</code>.</p>
+<p>The analysis reads the compiled classes of the whole project, so it finds cases that per-method rules cannot see.</p>
+<h2>Noncompliant code example</h2>
+<pre>
+// Config.java
+String host(Config c) { return c.props().get("host"); }   // Map.get may return null
+
+// Client.java
+int port(Config c) { return host(c).indexOf(':'); }        // Noncompliant
+</pre>
+<h2>Compliant solution</h2>
+<pre>
+int port(Config c) {
+  String h = host(c);
+  return h == null ? -1 : h.indexOf(':');
+}
+</pre>
+<h2>Resources</h2>
+<ul>
+  <li><a href="https://cwe.mitre.org/data/definitions/476">CWE-476 - NULL Pointer Dereference</a></li>
+  <li><a href="https://cwe.mitre.org/data/definitions/690">CWE-690 - Unchecked Return Value to NULL Pointer Dereference</a></li>
+</ul>
