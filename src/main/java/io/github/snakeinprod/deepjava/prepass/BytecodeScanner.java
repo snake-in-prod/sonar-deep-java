@@ -57,24 +57,54 @@ public final class BytecodeScanner implements Opcodes {
     return new ClassFacts(cn.name, cn.superName, List.copyOf(cn.interfaces), cn.sourceFile, methods);
   }
 
+  /**
+   * Prefix of a call key for a lookup whose content the author knows: the receiver is a static field (a constant
+   * table), there is no key ({@code queue.peek()}) or the key is computed ({@code map.get(id)}): usually an
+   * invariant. Only lookups with a constant key ({@code props.get("host")}) keep library models with guards.
+   */
+  public static final String KNOWN_LOOKUP = "~";
+
   /** Key of a call target: {@code owner#name(desc)ret}, prefixed with "!" when dispatch is not virtual. */
   public static String callKey(boolean exact, String owner, String name, String desc) {
     return (exact ? "!" : "") + owner + "#" + name + desc;
   }
 
+  /** Call key without prefixes, used for call-site statistics. */
+  public static String statKey(String callKey) {
+    int i = 0;
+    while (i < callKey.length() && (callKey.charAt(i) == '!' || callKey.charAt(i) == '~')) {
+      i++;
+    }
+    return callKey.substring(i);
+  }
+
+  private static final Set<String> NULL_TESTS = Set.of(
+    "java/util/Objects#isNull", "java/util/Objects#nonNull", "java/util/Objects#requireNonNull",
+    "java/util/Objects#requireNonNullElse", "java/util/Objects#requireNonNullElseGet", "java/util/Optional#ofNullable");
+
   static MethodFacts analyze(MethodNode m, int maxSteps) {
     boolean annotated = hasNullableAnnotation(m);
-    int sort = Type.getReturnType(m.desc).getSort();
-    boolean returnsRef = sort == Type.OBJECT || sort == Type.ARRAY;
-    if (!returnsRef || m.instructions.size() == 0 || (m.access & (ACC_ABSTRACT | ACC_NATIVE)) != 0) {
-      return annotated ? new MethodFacts(true, -1, Map.of(), Set.of()) : MethodFacts.NONE;
+    boolean bodyless = m.instructions.size() == 0 || (m.access & (ACC_ABSTRACT | ACC_NATIVE)) != 0;
+    boolean returnsNormally = bodyless || hasReturn(m);
+    if (bodyless) {
+      return MethodFacts.empty(annotated, returnsNormally);
     }
+    // every method with a body is analysed: void methods hold most of the call sites counted for statistics
     try {
-      return new Flow(m, maxSteps).run(annotated);
+      return new Flow(m, maxSteps).run(annotated, returnsNormally);
     } catch (AnalyzerException | RuntimeException e) {
       // ponytail: unsupported bytecode (JSR/RET, inconsistent stack) gives no summary instead of failing the analysis
-      return annotated ? new MethodFacts(true, -1, Map.of(), Set.of()) : MethodFacts.NONE;
+      return MethodFacts.empty(annotated, returnsNormally);
     }
+  }
+
+  private static boolean hasReturn(MethodNode m) {
+    for (AbstractInsnNode insn : m.instructions) {
+      if (insn.getOpcode() >= IRETURN && insn.getOpcode() <= RETURN) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static boolean hasNullableAnnotation(MethodNode m) {
@@ -145,13 +175,21 @@ public final class BytecodeScanner implements Opcodes {
           return V.U2;
         case LDC:
           Object c = ((LdcInsnNode) insn).cst;
-          return c instanceof Long || c instanceof Double ? V.U2 : V.U1;
+          return c instanceof Long || c instanceof Double ? V.U2 : c instanceof String ? CONSTANT : V.U1;
         case GETSTATIC:
-          return newValue(Type.getType(((FieldInsnNode) insn).desc));
+          Type t = Type.getType(((FieldInsnNode) insn).desc);
+          return t.getSort() == Type.OBJECT ? STATIC_FIELD : newValue(t);
         default:
           return V.U1;
       }
     }
+
+    /** A reference read from a static field; calls on it get the {@code ~} key prefix (constant receiver). */
+    static final V STATIC_FIELD = new V(1, false, Set.of(), -2);
+    /** A reference read from an instance field; a null check on it makes the path conditional. */
+    static final V FIELD = new V(1, false, Set.of(), -3);
+    /** A string constant. */
+    static final V CONSTANT = new V(1, false, Set.of(), -4);
 
     @Override
     public V copyOperation(AbstractInsnNode insn, V v) {
@@ -170,7 +208,8 @@ public final class BytecodeScanner implements Opcodes {
         case LNEG, DNEG, I2L, I2D, L2D, F2L, F2D, D2L:
           return V.U2;
         case GETFIELD:
-          return newValue(Type.getType(((FieldInsnNode) insn).desc));
+          Type t = Type.getType(((FieldInsnNode) insn).desc);
+          return t.getSort() == Type.OBJECT || t.getSort() == Type.ARRAY ? FIELD : newValue(t);
         case CHECKCAST:
           return v;
         case IFEQ, IFNE, IFLT, IFGE, IFGT, IFLE, TABLESWITCH, LOOKUPSWITCH, IRETURN, LRETURN, FRETURN, DRETURN, ARETURN,
@@ -204,7 +243,11 @@ public final class BytecodeScanner implements Opcodes {
         Type ret = Type.getReturnType(mi.desc);
         if (ret.getSort() == Type.OBJECT || ret.getSort() == Type.ARRAY) {
           boolean exact = mi.getOpcode() == INVOKESTATIC || mi.getOpcode() == INVOKESPECIAL;
-          return new V(1, false, Set.of(callKey(exact, mi.owner, mi.name, mi.desc)), -1);
+          String key = callKey(exact, mi.owner, mi.name, mi.desc);
+          // no key (queue.peek()) or a computed key: an invariant of the caller ("not empty", "key present")
+          boolean knownLookup = !exact && (values.get(0).local() == -2 || values.size() == 1
+            || values.get(1).local() != -2 && values.get(1).local() != -4);
+          return new V(1, false, Set.of(knownLookup ? KNOWN_LOOKUP + key : key), -1);
         }
         return newValue(ret);
       }
@@ -249,14 +292,34 @@ public final class BytecodeScanner implements Opcodes {
     private final Deque<Integer> work = new ArrayDeque<>();
     private final boolean[] queued;
 
-    private int nullReturnLine = -1;
+    private final Map<Integer, Set<String>> nullReturns = new HashMap<>();
     private final Map<String, Integer> nullableCalls = new HashMap<>();
+    private boolean onlyNull = true;
+    private boolean anyReturn;
+    /** {@code statKey@instructionIndex} of each null test of a call result. */
+    private final Set<String> nullChecks = new HashSet<>();
+
+    /**
+     * Extra local slot holding the path condition: {@link V#NULL} on ordinary paths, {@link V#U1} on paths that
+     * only exist when a parameter or field is null or an impossible exception was caught. Merging is "ordinary wins".
+     */
+    private final int flag;
+    /**
+     * Extra local slot holding the last call made on the path ({@code calls}), or {@link V#NULL} when some path
+     * has made no call yet.
+     */
+    private final int lastCall;
+    private final int firstParam;
+    private int paramEnd;
 
     @SuppressWarnings("unchecked")
     Flow(MethodNode m, int maxSteps) {
       this.m = m;
       this.maxSteps = maxSteps;
       this.insns = m.instructions;
+      this.flag = m.maxLocals;
+      this.lastCall = m.maxLocals + 1;
+      this.firstParam = (m.access & ACC_STATIC) == 0 ? 1 : 0;
       int n = insns.size();
       frames = new Frame[n];
       queued = new boolean[n];
@@ -279,8 +342,8 @@ public final class BytecodeScanner implements Opcodes {
       }
     }
 
-    MethodFacts run(boolean annotated) throws AnalyzerException {
-      Frame<V> init = new Frame<>(m.maxLocals, m.maxStack);
+    MethodFacts run(boolean annotated, boolean returnsNormally) throws AnalyzerException {
+      Frame<V> init = new Frame<>(m.maxLocals + 2, m.maxStack);
       int local = 0;
       if ((m.access & ACC_STATIC) == 0) {
         init.setLocal(local++, V.U1);
@@ -291,28 +354,57 @@ public final class BytecodeScanner implements Opcodes {
           init.setLocal(local++, V.U1);
         }
       }
+      paramEnd = local;
       while (local < m.maxLocals) {
         init.setLocal(local++, V.U1);
       }
+      init.setLocal(flag, V.NULL);
+      init.setLocal(lastCall, V.NULL);
       flow(0, init);
 
       Set<String> invoked = new HashSet<>();
+      Map<String, Integer> callSites = new HashMap<>();
       for (AbstractInsnNode insn : insns) {
         if (insn instanceof MethodInsnNode mi) {
           invoked.add(mi.name);
+          int sort = Type.getReturnType(mi.desc).getSort();
+          if ((sort == Type.OBJECT || sort == Type.ARRAY) && !isDiscarded(insn)) {
+            callSites.merge(statKey(callKey(false, mi.owner, mi.name, mi.desc)), 1, Integer::sum);
+          }
         }
       }
 
       int steps = 0;
       while (!work.isEmpty()) {
         if (++steps > maxSteps) {
-          return new MethodFacts(annotated, -1, Map.of(), Set.of());
+          return MethodFacts.empty(annotated, returnsNormally);
         }
         int i = work.pop();
         queued[i] = false;
         step(i, frames[i]);
       }
-      return new MethodFacts(annotated, nullReturnLine, Map.copyOf(nullableCalls), Set.copyOf(invoked));
+      Map<String, Integer> checks = new HashMap<>();
+      for (String c : nullChecks) {
+        checks.merge(c.substring(0, c.lastIndexOf('@')), 1, Integer::sum);
+      }
+      return new MethodFacts(annotated, Map.copyOf(nullReturns), anyReturn && onlyNull, returnsNormally,
+        Map.copyOf(nullableCalls), Set.copyOf(invoked), Map.copyOf(callSites), Map.copyOf(checks));
+    }
+
+    private static boolean isDiscarded(AbstractInsnNode call) {
+      AbstractInsnNode next = call.getNext();
+      while (next != null && next.getOpcode() < 0) {
+        next = next.getNext();
+      }
+      return next != null && next.getOpcode() == POP;
+    }
+
+    private void recordNullCheck(V v, int insnIndex) {
+      if (v != null) {
+        for (String c : v.calls()) {
+          nullChecks.add(statKey(c) + "@" + insnIndex);
+        }
+      }
     }
 
     private void step(int i, Frame<V> f) throws AnalyzerException {
@@ -327,6 +419,9 @@ public final class BytecodeScanner implements Opcodes {
           Frame<V> h = new Frame<>(f);
           h.clearStack();
           h.push(V.U1);
+          if ("java/lang/CloneNotSupportedException".equals(tcb.type)) {
+            h.setLocal(flag, V.U1);
+          }
           flow(insns.indexOf(tcb.handler), h);
         }
       }
@@ -334,8 +429,20 @@ public final class BytecodeScanner implements Opcodes {
       V top = sp > 0 ? f.getStack(sp - 1) : null;
       V second = sp > 1 ? f.getStack(sp - 2) : null;
       if (op == ARETURN) {
-        if (top.nullLit() && nullReturnLine == -1) {
-          nullReturnLine = lines[i];
+        anyReturn = true;
+        onlyNull &= top.isNullConstant();
+        // ponytail: "returns null only if an argument is null" is dropped; report it when the argument can be null
+        if (top.nullLit() && f.getLocal(flag).nullLit()) {
+          V last = f.getLocal(lastCall);
+          Set<String> after = last.nullLit() ? Set.of() : last.calls();
+          nullReturns.merge(lines[i], after, (a, b) -> {
+            if (a.isEmpty() || b.isEmpty()) {
+              return Set.of();
+            }
+            Set<String> u = new HashSet<>(a);
+            u.addAll(b);
+            return Set.copyOf(u);
+          });
         }
         for (String c : top.calls()) {
           nullableCalls.putIfAbsent(c, lines[i]);
@@ -344,9 +451,26 @@ public final class BytecodeScanner implements Opcodes {
       if (op == JSR || op == RET) {
         throw new AnalyzerException(insn, "JSR/RET not supported");
       }
+      if (op == IFNULL || op == IFNONNULL) {
+        recordNullCheck(top, i);
+      } else if (op == IF_ACMPEQ || op == IF_ACMPNE) {
+        recordNullCheck(top.isNullConstant() ? second : second.isNullConstant() ? top : null, i);
+      } else if (insn instanceof MethodInsnNode mi && NULL_TESTS.contains(mi.owner + "#" + mi.name)) {
+        for (int a = 0; a < Type.getArgumentTypes(mi.desc).length; a++) {
+          recordNullCheck(f.getStack(sp - 1 - a), i);
+        }
+      }
 
       Frame<V> out = new Frame<>(f);
       out.execute(insn, interp);
+      if (op == ACONST_NULL && !f.getLocal(flag).nullLit()) {
+        // a null created on a "parameter is null" path is the caller's null, not this method's
+        out.setStack(out.getStackSize() - 1, V.U1);
+      }
+      if (insn instanceof MethodInsnNode mi) {
+        boolean exact = op == INVOKESTATIC || op == INVOKESPECIAL;
+        out.setLocal(lastCall, new V(1, false, Set.of(callKey(exact, mi.owner, mi.name, mi.desc)), -1));
+      }
 
       if (insn instanceof JumpInsnNode j) {
         int target = insns.indexOf(j.label);
@@ -380,13 +504,26 @@ public final class BytecodeScanner implements Opcodes {
       }
     }
 
-    /** On a branch where local {@code k} is known null / non-null, overwrite it and its copies on the stack. */
-    private static Frame<V> refine(Frame<V> f, int k, boolean isNull) {
+    /**
+     * On a branch where local {@code k} is known null / non-null, overwrite it and its copies on the stack.
+     * A parameter known to be null marks the path as conditional instead (see {@link #flag}).
+     */
+    private Frame<V> refine(Frame<V> f, int k, boolean isNull) {
+      if (k <= -2 && isNull) {
+        // a field (static or instance) is null on this branch: null results here depend on object state
+        Frame<V> r = new Frame<>(f);
+        r.setLocal(flag, V.U1);
+        return r;
+      }
       if (k < 0) {
         return f;
       }
       Frame<V> r = new Frame<>(f);
-      V v = isNull ? V.NULL : V.U1;
+      boolean param = k >= firstParam && k < paramEnd;
+      V v = isNull && !param ? V.NULL : V.U1;
+      if (isNull && param) {
+        r.setLocal(flag, V.U1);
+      }
       r.setLocal(k, v);
       for (int s = 0; s < r.getStackSize(); s++) {
         if (r.getStack(s).local() == k) {

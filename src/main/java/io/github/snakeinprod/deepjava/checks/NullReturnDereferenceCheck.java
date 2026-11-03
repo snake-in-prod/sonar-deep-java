@@ -5,6 +5,7 @@ import io.github.snakeinprod.deepjava.prepass.Summaries;
 import io.github.snakeinprod.deepjava.prepass.Summaries.NullReason;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -14,6 +15,8 @@ import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
+import org.sonar.plugins.java.api.tree.BinaryExpressionTree;
+import org.sonar.plugins.java.api.tree.LiteralTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
@@ -56,12 +59,16 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
     if (key == null) {
       return;
     }
-    Optional<NullReason> reason = summaries.get().nullReturn(key);
-    if (reason.isEmpty() || isGuarded(mit, reason.get().guards())) {
+    Summaries s = summaries.get();
+    Optional<NullReason> reason = s.nullReturn(key);
+    if (reason.isEmpty() || isGuarded(mit, reason.get().guards()) || !s.isReportable(key, reason.get())
+      || isStandardSystemProperty(sym, mit) || isNullCheckedElsewhere(mit)) {
       return;
     }
     NullReason r = reason.get();
-    String message = "\"" + r.method() + "\" can return null (" + r.detail() + "); check the result before dereferencing it.";
+    Summaries.CallStats stats = s.callStats(key);
+    String evidence = !r.fromLibrary() && stats.checked() > 0 ?"; null-checked at " + stats.checked() + " of " + stats.sites() + " call sites" : "";
+    String message = "\"" + r.method() + "\" can return null (" + r.detail() + evidence + "); check the result before dereferencing it.";
 
     Tree parent = skipParentheses(mit);
     if (isDereferenceOf(parent, mit)) {
@@ -151,14 +158,27 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
     return isDereferenceOf(skipParentheses(first), first) ? first : null;
   }
 
-  /** A guard method (e.g. {@code containsKey}) is called on the same receiver variable in the same method. */
+  /**
+   * For lookup-like library methods (models with guards): the key is computed, which usually means an invariant
+   * the author knows, or a guard method (e.g. {@code containsKey}) is called on the same receiver in the same method.
+   */
   private static boolean isGuarded(MethodInvocationTree mit, Set<String> guards) {
-    if (guards.isEmpty() || !(mit.methodSelect() instanceof MemberSelectExpressionTree select)) {
+    if (guards.isEmpty()) {
+      return false;
+    }
+    if (!mit.arguments().isEmpty() && !isConstant(mit.arguments().get(0))) {
+      return true;
+    }
+    if (!(mit.methodSelect() instanceof MemberSelectExpressionTree select)) {
       return false;
     }
     Symbol receiver = receiverSymbol(select.expression());
     if (receiver == null) {
       return false;
+    }
+    if (receiver.isStatic() && receiver.isFinal() || isFilledAtDeclaration(receiver)) {
+      // lookup in a constant table, or a local created with its content: content is known to the author
+      return true;
     }
     Tree method = mit;
     while (method != null && !method.is(Tree.Kind.METHOD, Tree.Kind.CONSTRUCTOR, Tree.Kind.LAMBDA_EXPRESSION)) {
@@ -182,13 +202,117 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
     return found[0];
   }
 
+  /** Properties every JVM defines, so {@code System.getProperty("os.name")} is never null. */
+  private static final Set<String> STANDARD_PROPERTIES = Set.of("java.version", "java.vendor", "java.vendor.url", "java.home",
+    "java.class.version", "java.class.path", "java.io.tmpdir", "java.specification.version", "java.vm.name", "java.vm.vendor",
+    "java.vm.version", "java.runtime.version", "os.name", "os.arch", "os.version", "file.separator", "path.separator",
+    "line.separator", "user.name", "user.home", "user.dir", "native.encoding", "file.encoding");
+
+  private static boolean isStandardSystemProperty(Symbol.MethodSymbol sym, MethodInvocationTree mit) {
+    return "getProperty".equals(sym.name()) && sym.owner().type().is("java.lang.System") && !mit.arguments().isEmpty()
+      && mit.arguments().get(0).asConstant(String.class).map(STANDARD_PROPERTIES::contains).orElse(false);
+  }
+
+  /** The same call is compared with null in the same method: {@code key() == null ? 0 : key().limit()}. */
+  private static boolean isNullCheckedElsewhere(MethodInvocationTree mit) {
+    Tree method = mit;
+    while (method != null && !method.is(Tree.Kind.METHOD, Tree.Kind.CONSTRUCTOR, Tree.Kind.LAMBDA_EXPRESSION)) {
+      method = method.parent();
+    }
+    if (method == null) {
+      return false;
+    }
+    boolean[] found = {false};
+    method.accept(new BaseTreeVisitor() {
+      @Override
+      public void visitBinaryExpression(BinaryExpressionTree b) {
+        if (b.is(Tree.Kind.EQUAL_TO, Tree.Kind.NOT_EQUAL_TO)) {
+          ExpressionTree other = b.leftOperand().is(Tree.Kind.NULL_LITERAL) ? b.rightOperand()
+            : b.rightOperand().is(Tree.Kind.NULL_LITERAL) ? b.leftOperand() : null;
+          if (other != null && other != mit && same(other, mit)) {
+            found[0] = true;
+          }
+        }
+        super.visitBinaryExpression(b);
+      }
+    });
+    return found[0];
+  }
+
+  /** Structural equality of simple expressions: names, field accesses, literals and calls. */
+  private static boolean same(ExpressionTree a, ExpressionTree b) {
+    a = unparenthesize(a);
+    b = unparenthesize(b);
+    if (a instanceof IdentifierTree x && b instanceof IdentifierTree y) {
+      return x.name().equals(y.name()) && x.symbol().equals(y.symbol());
+    }
+    if (a instanceof MemberSelectExpressionTree x && b instanceof MemberSelectExpressionTree y) {
+      return x.identifier().name().equals(y.identifier().name()) && same(x.expression(), y.expression());
+    }
+    if (a instanceof LiteralTree x && b instanceof LiteralTree y) {
+      return x.kind() == y.kind() && x.value().equals(y.value());
+    }
+    if (a instanceof MethodInvocationTree x && b instanceof MethodInvocationTree y) {
+      if (!Objects.equals(x.methodSymbol().signature(), y.methodSymbol().signature()) || x.arguments().size() != y.arguments().size()
+        || !same(x.methodSelect(), y.methodSelect())) {
+        return false;
+      }
+      for (int i = 0; i < x.arguments().size(); i++) {
+        if (!same(x.arguments().get(i), y.arguments().get(i))) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * A local initialised with its content: {@code new EnumMap<>(Map.of(...))}, {@code Map.of(...)},
+   * {@code stream.collect(partitioningBy(...))}.
+   */
+  private static boolean isFilledAtDeclaration(Symbol var) {
+    if (!isLocal(var) || !(var.declaration() instanceof VariableTree decl) || decl.initializer() == null) {
+      return false;
+    }
+    ExpressionTree init = unparenthesize(decl.initializer());
+    if (init instanceof org.sonar.plugins.java.api.tree.NewClassTree nc) {
+      return nc.arguments().stream().anyMatch(a -> !a.symbolType().isPrimitive());
+    }
+    if (init instanceof MethodInvocationTree call) {
+      String name = call.methodSymbol().name();
+      return (Set.of("of", "ofEntries", "copyOf").contains(name) && !call.arguments().isEmpty())
+        // partitioningBy always holds both keys, true and false
+        || call.arguments().stream().anyMatch(a -> a instanceof MethodInvocationTree m && "partitioningBy".equals(m.methodSymbol().name()));
+    }
+    return false;
+  }
+
+  private static ExpressionTree unparenthesize(ExpressionTree e) {
+    while (e instanceof org.sonar.plugins.java.api.tree.ParenthesizedTree p) {
+      e = p.expression();
+    }
+    return e;
+  }
+
+  /** A literal, or a static final field / enum constant. */
+  private static boolean isConstant(ExpressionTree e) {
+    if (e.asConstant().isPresent()) {
+      return true;
+    }
+    Symbol s = e instanceof IdentifierTree id ? id.symbol()
+      : e instanceof MemberSelectExpressionTree ms ? ms.identifier().symbol() : null;
+    return s != null && s.isVariableSymbol() && s.isStatic() && s.isFinal();
+  }
+
   private static Symbol receiverSymbol(ExpressionTree e) {
     if (e instanceof IdentifierTree id) {
       return id.symbol().isUnknown() ? null : id.symbol();
     }
-    if (e instanceof MemberSelectExpressionTree ms && ms.expression().is(Tree.Kind.IDENTIFIER)
-      && "this".equals(((IdentifierTree) ms.expression()).name())) {
-      return ms.identifier().symbol().isUnknown() ? null : ms.identifier().symbol();
+    if (e instanceof MemberSelectExpressionTree ms && !ms.identifier().symbol().isUnknown()
+      && (ms.identifier().symbol().isStatic()
+        || ms.expression().is(Tree.Kind.IDENTIFIER) && "this".equals(((IdentifierTree) ms.expression()).name()))) {
+      return ms.identifier().symbol();
     }
     return null;
   }

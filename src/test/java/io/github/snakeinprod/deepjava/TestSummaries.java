@@ -20,6 +20,10 @@ public final class TestSummaries {
   }
 
   public static Summaries compile(Path out, String... sources) throws Exception {
+    return compile(new Summaries.Thresholds(8, 0, 0), out, sources);
+  }
+
+  public static Summaries compile(Summaries.Thresholds thresholds, Path out, String... sources) throws Exception {
     JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
     List<String> args = new ArrayList<>(List.of("-g", "-d", out.toString()));
     args.addAll(List.of(sources));
@@ -32,6 +36,6 @@ public final class TestSummaries {
         facts.add(BytecodeScanner.scan(Files.readAllBytes(p), 20000));
       }
     }
-    return new Summaries(facts, new Hierarchy(Summaries.byName(facts), List.of()), LibraryModels.load(List.of()), 8);
+    return new Summaries(facts, new Hierarchy(Summaries.byName(facts), List.of()), LibraryModels.load(List.of()), thresholds);
   }
 }

@@ -27,7 +27,13 @@ class Client {
   }
 
   int property() {
-    return System.getProperty("user.dir").length(); // Noncompliant
+    return System.getProperty("app.home").length(); // Noncompliant
+  }
+
+  int standardProperty(Config c) {
+    int n = System.getProperty("os.name").length();
+    n += c.host() == null ? 0 : c.host().length();
+    return n;
   }
 
   int compliant(Config c, Map<String, String> m) {
@@ -43,6 +49,46 @@ class Client {
     String h2 = c.host();
     n += Objects.requireNonNull(h2).length();
     return n;
+  }
+
+  private static final Map<String, String> TABLE = new java.util.HashMap<>();
+
+  int argumentDependent(Config c) {
+    int n = Config.trimOrNull("x").length();
+    n += Config.classOf("x").getName().length();
+    n += Config.fill(new String[1]).length;
+    n += Config.lookup("k").length();
+    n += TABLE.get("k").length();
+    n += Client.TABLE.get("k").length();
+    n += c.copy().hashCode();
+    n += c.name().length();
+    n += c.failing("x").length();
+    n += c.cachedOrNull().length();
+    n += c.passThrough("k").length();
+    for (Map.Entry<String, String> e : new java.util.HashMap<String, String>().entrySet()) {
+      n += e.getValue().length();
+    }
+    return n;
+  }
+
+  int localNull(Config c) {
+    return c.localNull(true).length(); // Noncompliant {{"Config.localNull()" can return null (Config.java:99); check the result before dereferencing it.}}
+  }
+
+  int filledAtDeclaration(java.util.List<String> words) {
+    Map<String, String> fixed = new java.util.HashMap<>(Map.of("a", "1"));
+    Map<Boolean, java.util.List<String>> parts = words.stream().collect(java.util.stream.Collectors.partitioningBy(String::isEmpty));
+    Map<String, String> empty = new java.util.HashMap<>(16);
+    return fixed.get("a").length() + parts.get(true).size()
+      + empty.get("a").length(); // Noncompliant
+  }
+
+  int recheckedChain(Config c) {
+    return c.props().get("k") != null ? c.props().get("k").length() : 0;
+  }
+
+  int computedKey(Map<String, String> m, String key) {
+    return m.get(key).length() + m.get(key + "x").length();
   }
 
   int guardedMap(Map<String, String> m) {

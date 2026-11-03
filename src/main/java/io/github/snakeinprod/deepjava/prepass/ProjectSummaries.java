@@ -8,51 +8,75 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.sonar.api.batch.ScannerSide;
-import org.sonar.api.batch.fs.FileSystem;
 import org.sonar.api.config.Configuration;
 
 /**
- * The pre-pass: reads all project bytecode once (lazily, on first use by a rule), with per-class results
- * cached by class file hash between analyses.
+ * The pre-pass, shared by all modules of one analysis. It reads the bytecode of the whole project once
+ * (lazily, on first use by a rule): the standard Maven/Gradle output directories found under the project base
+ * directory plus the {@code sonar.java.binaries} of every module seen so far. Per-class results are cached by
+ * class file hash between analyses.
  */
-@ScannerSide
+@org.sonar.api.scanner.ScannerSide
 public class ProjectSummaries implements Supplier<Summaries> {
 
   private static final Logger LOG = LoggerFactory.getLogger(ProjectSummaries.class);
-  private static final int CACHE_FORMAT = 1;
+  private static final int CACHE_FORMAT = 7;
+  private static final Set<String> SKIP_DIRS = Set.of(".git", "node_modules", "src", ".scannerwork", ".gradle", ".idea");
 
   private final Configuration config;
   private final Path baseDir;
+  private final Set<Path> binaries = new LinkedHashSet<>();
+  private final Set<Path> libraries = new LinkedHashSet<>();
+  private final Map<String, ClassFacts> scanned = new HashMap<>();
+  private boolean discovered;
+  private boolean stale = true;
   private Summaries summaries;
 
-  public ProjectSummaries(Configuration config, FileSystem fs) {
+  public ProjectSummaries(Configuration config) {
     this.config = config;
-    this.baseDir = fs.baseDir().toPath();
+    this.baseDir = config.get("sonar.projectBaseDir").map(Path::of).orElse(Path.of("")).toAbsolutePath();
+  }
+
+  /** Called for each module with its own settings, before its files are analysed. */
+  public synchronized void addModule(Path moduleBaseDir, Configuration moduleConfig) {
+    try {
+      boolean changed = binaries.addAll(resolve(moduleBaseDir, moduleConfig.getStringArray("sonar.java.binaries")));
+      changed |= libraries.addAll(resolve(moduleBaseDir, moduleConfig.getStringArray("sonar.java.libraries")));
+      stale |= changed;
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 
   @Override
   public synchronized Summaries get() {
-    if (summaries == null) {
+    if (stale) {
       try {
         summaries = build();
+        stale = false;
       } catch (IOException e) {
         throw new UncheckedIOException(e);
       }
@@ -63,15 +87,20 @@ public class ProjectSummaries implements Supplier<Summaries> {
   private Summaries build() throws IOException {
     long start = System.currentTimeMillis();
     int maxSteps = config.getInt(DeepJavaPlugin.MAX_STEPS).orElse(20000);
-    int maxTargets = config.getInt(DeepJavaPlugin.MAX_TARGETS).orElse(8);
-    List<Path> binaries = resolve(config.getStringArray("sonar.java.binaries"));
-    List<Path> libraries = resolve(config.getStringArray("sonar.java.libraries"));
-    List<Path> models = resolve(config.getStringArray(DeepJavaPlugin.MODELS));
+    Summaries.Thresholds thresholds = new Summaries.Thresholds(
+      config.getInt(DeepJavaPlugin.MAX_TARGETS).orElse(8),
+      config.getInt(DeepJavaPlugin.MIN_SITES).orElse(5),
+      config.getDouble(DeepJavaPlugin.MIN_RATIO).orElse(0.8));
+    List<Path> models = resolve(baseDir, config.getStringArray(DeepJavaPlugin.MODELS));
+    if (!discovered) {
+      binaries.addAll(discoverOutputDirs(baseDir));
+      discovered = true;
+    }
 
     Path cacheFile = cacheFile();
-    Map<String, ClassFacts> cache = readCache(cacheFile);
+    Map<String, ClassFacts> cache = scanned.isEmpty() ? readCache(cacheFile) : scanned;
     Map<String, ClassFacts> used = new HashMap<>();
-    List<ClassFacts> facts = new ArrayList<>();
+    Map<String, ClassFacts> byName = new HashMap<>();
     int[] hits = {0};
     forEachClass(binaries, bytes -> {
       String key = sha256(bytes) + ":" + maxSteps;
@@ -82,31 +111,72 @@ public class ProjectSummaries implements Supplier<Summaries> {
         f = BytecodeScanner.scan(bytes, maxSteps);
       }
       used.put(key, f);
-      facts.add(f);
+      byName.putIfAbsent(f.name(), f);
     });
+    scanned.putAll(used);
     writeCache(cacheFile, used);
 
-    Summaries s = new Summaries(facts, new Hierarchy(Summaries.byName(facts), libraries), LibraryModels.load(models), maxTargets);
-    LOG.info("Deep Java pre-pass: {} classes ({} from cache) in {} ms", facts.size(), hits[0], System.currentTimeMillis() - start);
+    Summaries s = new Summaries(byName.values(), new Hierarchy(byName, List.copyOf(libraries)), LibraryModels.load(models), thresholds);
+    LOG.info("Deep Java pre-pass: {} classes ({} from cache) from {} directories/jars in {} ms",
+      byName.size(), hits[0], binaries.size(), System.currentTimeMillis() - start);
     return s;
   }
 
-  /** Paths relative to the base directory; {@code *} and {@code **} wildcards are expanded. */
-  List<Path> resolve(String[] patterns) throws IOException {
+  /** {@code target/classes} and {@code build/classes/<lang>/main} directories anywhere below {@code root}. */
+  static List<Path> discoverOutputDirs(Path root) throws IOException {
+    List<Path> out = new ArrayList<>();
+    Files.walkFileTree(root, new SimpleFileVisitor<>() {
+      @Override
+      public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+        Path name = dir.getFileName();
+        Path parent = dir.getParent();
+        if (name == null || parent == null || dir.equals(root)) {
+          return FileVisitResult.CONTINUE;
+        }
+        if (SKIP_DIRS.contains(name.toString())) {
+          return FileVisitResult.SKIP_SUBTREE;
+        }
+        boolean mavenOut = name.toString().equals("classes") && parent.getFileName().toString().equals("target");
+        boolean gradleOut = name.toString().equals("main") && parent.getParent() != null
+          && parent.getParent().getFileName().toString().equals("classes")
+          && parent.getParent().getParent() != null && parent.getParent().getParent().getFileName().toString().equals("build");
+        if (mavenOut || gradleOut) {
+          out.add(dir.toAbsolutePath().normalize());
+          return FileVisitResult.SKIP_SUBTREE;
+        }
+        return FileVisitResult.CONTINUE;
+      }
+
+      @Override
+      public FileVisitResult visitFileFailed(Path file, IOException e) {
+        return FileVisitResult.CONTINUE;
+      }
+    });
+    return out;
+  }
+
+  /** Paths relative to {@code base}; {@code *} and {@code **} wildcards are expanded. */
+  static List<Path> resolve(Path baseDir, String[] patterns) throws IOException {
     List<Path> out = new ArrayList<>();
     for (String raw : patterns) {
       String p = raw.trim();
       if (p.isEmpty()) {
         continue;
       }
-      if (p.contains("*") || p.contains("?")) {
-        Path root = Path.of(p).isAbsolute() ? Path.of(p).getRoot() : baseDir;
-        PathMatcher m = FileSystems.getDefault().getPathMatcher("glob:" + p.replace('\\', '/'));
-        try (Stream<Path> s = Files.walk(root)) {
-          s.filter(f -> m.matches(Path.of(p).isAbsolute() ? f : baseDir.relativize(f))).forEach(out::add);
+      String glob = p.replace('\\', '/');
+      int wildcard = indexOfWildcard(glob);
+      if (wildcard >= 0) {
+        // walk only from the directory before the first wildcard
+        int cut = glob.lastIndexOf('/', wildcard);
+        Path root = cut < 0 ? baseDir : baseDir.resolve(glob.substring(0, cut + 1)).normalize();
+        PathMatcher m = FileSystems.getDefault().getPathMatcher("glob:" + glob.substring(cut + 1));
+        if (Files.isDirectory(root)) {
+          try (Stream<Path> s = Files.walk(root)) {
+            s.filter(f -> m.matches(root.relativize(f))).map(f -> f.toAbsolutePath().normalize()).forEach(out::add);
+          }
         }
       } else {
-        Path f = baseDir.resolve(p);
+        Path f = baseDir.resolve(p).toAbsolutePath().normalize();
         if (Files.exists(f)) {
           out.add(f);
         }
@@ -115,11 +185,17 @@ public class ProjectSummaries implements Supplier<Summaries> {
     return out;
   }
 
+  private static int indexOfWildcard(String s) {
+    int star = s.indexOf('*');
+    int question = s.indexOf('?');
+    return star < 0 ? question : question < 0 ? star : Math.min(star, question);
+  }
+
   private interface ClassConsumer {
     void accept(byte[] bytes) throws IOException;
   }
 
-  private static void forEachClass(List<Path> roots, ClassConsumer consumer) throws IOException {
+  private static void forEachClass(Collection<Path> roots, ClassConsumer consumer) throws IOException {
     for (Path root : roots) {
       if (Files.isDirectory(root)) {
         try (Stream<Path> s = Files.walk(root)) {

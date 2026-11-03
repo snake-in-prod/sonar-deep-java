@@ -22,4 +22,14 @@ class NullReturnDereferenceCheckTest {
       .withCheck(new NullReturnDereferenceCheck(() -> summaries))
       .verifyIssues();
   }
+
+  @Test
+  void project_nulls_need_call_site_statistics() throws Exception {
+    Summaries summaries = TestSummaries.compile(new Summaries.Thresholds(8, 5, 0.8), classes, "src/test/files/stats/Stats.java");
+    CheckVerifier.newVerifier()
+      .onFile("src/test/files/stats/Stats.java")
+      .withClassPath(List.of(classes.toFile()))
+      .withCheck(new NullReturnDereferenceCheck(() -> summaries))
+      .verifyIssues();
+  }
 }
