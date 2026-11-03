@@ -98,7 +98,8 @@ final class ProjectAnalyses implements Opcodes {
     }
     ignored.forEach((k, sites) -> {
       Summaries.Call c = Summaries.parse(k);
-      if (c.desc().endsWith(")L" + c.owner() + ";")) {
+      // only project methods: JDK results such as Iterator.next() are often skipped on purpose
+      if (c.desc().endsWith(")L" + c.owner() + ";") || s.targets(k).isEmpty()) {
         return;
       }
       int u = used.getOrDefault(k, 0);
@@ -118,7 +119,8 @@ final class ProjectAnalyses implements Opcodes {
     Map<String, List<Method>> overridesByBase = new HashMap<>();
     for (Method m : methods) {
       int a = m.facts().info().access();
-      if ((a & (ACC_STATIC | ACC_PRIVATE | ACC_BRIDGE | ACC_SYNTHETIC)) != 0 || m.name().startsWith("<")) {
+      if ((a & (ACC_STATIC | ACC_PRIVATE | ACC_BRIDGE | ACC_SYNTHETIC)) != 0 || m.name().startsWith("<")
+        || Set.of("toString()Ljava/lang/String;", "hashCode()I", "equals(Ljava/lang/Object;)Z").contains(m.nameDesc())) {
         continue;
       }
       for (ClassFacts sup = superOf(m.owner()); sup != null; sup = superOf(sup)) {

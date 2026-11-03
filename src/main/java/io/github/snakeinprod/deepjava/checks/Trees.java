@@ -203,6 +203,28 @@ final class Trees {
           && var.equals(symbol(u.expression())));
   }
 
+  /** Variables assigned ({@code =}, {@code ++}, {@code +=}) in each statement, computed once per block. */
+  static List<java.util.Set<Symbol>> assignedPerStatement(List<StatementTree> body) {
+    List<java.util.Set<Symbol>> out = new ArrayList<>();
+    for (StatementTree st : body) {
+      java.util.Set<Symbol> set = new java.util.HashSet<>();
+      collect(st, AssignmentExpressionTree.class).forEach(a -> {
+        Symbol v = symbol(a.variable());
+        if (v != null) {
+          set.add(v);
+        }
+      });
+      collect(st, UnaryExpressionTree.class).forEach(u -> {
+        Symbol v = symbol(u.expression());
+        if (v != null && u.is(Tree.Kind.POSTFIX_INCREMENT, Tree.Kind.POSTFIX_DECREMENT, Tree.Kind.PREFIX_INCREMENT, Tree.Kind.PREFIX_DECREMENT)) {
+          set.add(v);
+        }
+      });
+      out.add(set);
+    }
+    return out;
+  }
+
   static List<StatementTree> statementsAfter(BlockTree block, StatementTree s) {
     List<StatementTree> body = block.body();
     int i = body.indexOf(s);

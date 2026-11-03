@@ -32,6 +32,7 @@ final class TaintSolver {
   private final Map<Method, Set<SinkFlow>> sinkParams = new HashMap<>();
   private final Map<Method, Map<Integer, Edge>> edges = new HashMap<>();
   private final Map<String, Finding> findings = new LinkedHashMap<>();
+  private final Map<Method, Map<String, Set<String>>> resolved = new HashMap<>();
 
   TaintSolver(Summaries s) {
     this.s = s;
@@ -108,6 +109,18 @@ final class TaintSolver {
     if (!b.startsWith("C")) {
       return Set.of(label);
     }
+    Map<String, Set<String>> memo = resolved.computeIfAbsent(m, k -> new HashMap<>());
+    Set<String> known = memo.get(label);
+    if (known != null) {
+      return known;
+    }
+    memo.put(label, Set.of());
+    Set<String> r = Set.copyOf(resolveCall(m, label, b, depth));
+    memo.put(label, r);
+    return r;
+  }
+
+  private Set<String> resolveCall(Method m, String label, String b, int depth) {
     Edge e = edge(m, Integer.parseInt(b.substring(1)));
     if (e == null || depth > 12) {
       return Set.of();

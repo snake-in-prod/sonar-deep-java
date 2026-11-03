@@ -700,8 +700,15 @@ public final class BytecodeScanner implements Opcodes {
         if ((op >= IRETURN && op <= RETURN) || op == ATHROW || op == GOTO) {
           return true;
         }
+        AbstractInsnNode prev = insn.getPrevious();
+        while (prev != null && prev.getOpcode() < 0) {
+          prev = prev.getPrevious();
+        }
+        boolean constantStore = op >= ISTORE && op <= ASTORE && prev != null
+          && (prev.getOpcode() >= ACONST_NULL && prev.getOpcode() <= LDC);
+        // "fail(); x = null;" keeps javac's definite assignment happy: not real code
         boolean sideEffect = (insn instanceof MethodInsnNode mi && !mi.name.equals("<init>"))
-          || (op >= ISTORE && op <= ASTORE) || op == PUTFIELD || op == PUTSTATIC || op == IINC || (op >= IASTORE && op <= SASTORE)
+          || (op >= ISTORE && op <= ASTORE && !constantStore) || op == PUTFIELD || op == PUTSTATIC || op == IINC || (op >= IASTORE && op <= SASTORE)
           || insn instanceof JumpInsnNode || insn instanceof TableSwitchInsnNode || insn instanceof LookupSwitchInsnNode;
         if (sideEffect) {
           return false;

@@ -32,7 +32,8 @@ public class ResourceFromHelperCheck extends DeepCheck {
   public void visitNode(Tree tree) {
     MethodInvocationTree mit = (MethodInvocationTree) tree;
     Symbol.MethodSymbol sym = mit.methodSymbol();
-    if (sym.isUnknown() || !sym.returnType().type().isSubtypeOf("java.lang.AutoCloseable")) {
+    if (sym.isUnknown() || !sym.returnType().type().isSubtypeOf("java.lang.AutoCloseable") || !isRealResource(sym.returnType().type().fullyQualifiedName())
+      || sym.returnType().type().isSubtypeOf("java.util.stream.BaseStream")) {
       return;
     }
     String key = Trees.callKey(sym);
@@ -62,7 +63,7 @@ public class ResourceFromHelperCheck extends DeepCheck {
 
   static boolean fresh(Summaries s, Summaries.Method t, int depth) {
     for (String type : t.facts().nulls().returnedNew()) {
-      if (s.isSubtype(type, "java/lang/AutoCloseable")) {
+      if (s.isSubtype(type, "java/lang/AutoCloseable") && isRealResource(type) && !s.isSubtype(type, "java/util/stream/BaseStream")) {
         return true;
       }
     }
@@ -76,6 +77,11 @@ public class ResourceFromHelperCheck extends DeepCheck {
       }
     }
     return false;
+  }
+
+  /** Buffers in memory need no close(). */
+  static boolean isRealResource(String type) {
+    return !type.matches("(?i).*(ByteArray|CharArray|StringReader|StringWriter|StringBuilderWriter|Formatter$).*");
   }
 
   /** Not closed, returned, stored, passed on, captured by a lambda or used in try-with-resources. */
