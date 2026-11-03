@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
 
-/** Compiles test sources and runs the pre-pass on them, without the cache. */
+/** Compiles test sources (with the API stubs of {@code src/test/files/stubs}) and runs the pre-pass on them. */
 public final class TestSummaries {
 
   private TestSummaries() {
@@ -25,17 +25,23 @@ public final class TestSummaries {
 
   public static Summaries compile(Summaries.Thresholds thresholds, Path out, String... sources) throws Exception {
     JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-    List<String> args = new ArrayList<>(List.of("-g", "-d", out.toString()));
+    List<String> args = new ArrayList<>(List.of("-g", "-proc:none", "-d", out.toString()));
     args.addAll(List.of(sources));
+    try (Stream<Path> stubs = Files.walk(Path.of("src/test/files/stubs"))) {
+      stubs.filter(p -> p.toString().endsWith(".java")).forEach(p -> args.add(p.toString()));
+    }
     if (javac.run(null, null, null, args.toArray(String[]::new)) != 0) {
       throw new IllegalStateException("compilation failed");
     }
     List<ClassFacts> facts = new ArrayList<>();
     try (Stream<Path> s = Files.walk(out)) {
       for (Path p : (Iterable<Path>) s.filter(f -> f.toString().endsWith(".class"))::iterator) {
-        facts.add(BytecodeScanner.scan(Files.readAllBytes(p), 20000));
+        String rel = out.relativize(p).toString();
+        if (!rel.startsWith("javax") && !rel.startsWith("org") && !rel.startsWith("com")) {
+          facts.add(BytecodeScanner.scan(Files.readAllBytes(p), 20000));
+        }
       }
     }
-    return new Summaries(facts, new Hierarchy(Summaries.byName(facts), List.of()), LibraryModels.load(List.of()), thresholds);
+    return new Summaries(facts, new Hierarchy(Summaries.byName(facts), List.of(out)), LibraryModels.load(List.of()), thresholds);
   }
 }

@@ -383,10 +383,10 @@ public final class TaintScanner implements Opcodes {
           Type ret = Type.getReturnType(indy.desc);
           Set<String> l = Set.of();
           if (indy.name.startsWith("makeConcat")) {
+            // numbers stay numeric: "id=" + n cannot inject
             for (TV v : values) {
               l = union(l, v.labels());
             }
-            l = Set.copyOf(l.stream().map(x -> x.endsWith("#") ? x.substring(0, x.length() - 1) : x).toList());
           }
           return ret == Type.VOID_TYPE ? null : new TV(ret.getSize(), l, -1, null);
         }

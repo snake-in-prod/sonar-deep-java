@@ -221,7 +221,7 @@ final class ProjectAnalyses implements Opcodes {
       boolean anyBoth = accesses.stream().anyMatch(a -> a.a().locks().size() > 1);
       if (byLock.size() >= 2 && !anyBoth) {
         List<Map.Entry<String, List<Access>>> groups = new ArrayList<>(byLock.entrySet());
-        groups.sort((x, y) -> y.getValue().size() - x.getValue().size());
+        groups.sort((x, y) -> x.getValue().size() != y.getValue().size() ? y.getValue().size() - x.getValue().size() : x.getKey().compareTo(y.getKey()));
         Map.Entry<String, List<Access>> main = groups.get(0);
         if (main.getValue().size() >= 2) {
           Access ref = main.getValue().get(0);
@@ -573,6 +573,11 @@ final class ProjectAnalyses implements Opcodes {
     boolean frameworks = false;
     for (Method m : methods) {
       loads.addAll(m.facts().uses().enumLoads());
+      boolean switchMapClass = m.owner().fields().keySet().stream().anyMatch(f -> f.startsWith("$SwitchMap$"));
+      boolean enumSynthetic = (m.owner().access() & ACC_ENUM) != 0 && Set.of("values", "valueOf", "$values", "<clinit>", "<init>").contains(m.name());
+      if (switchMapClass || enumSynthetic) {
+        continue;
+      }
       for (CallSite cs : m.facts().ex().calls()) {
         Summaries.Call c = Summaries.parse(cs.callKey());
         if (c.name().equals("values") || c.name().equals("valueOf")) {

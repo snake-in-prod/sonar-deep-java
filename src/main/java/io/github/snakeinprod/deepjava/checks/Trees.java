@@ -153,6 +153,13 @@ final class Trees {
       }
 
       @Override
+      public void visitBinaryExpression(BinaryExpressionTree t) {
+        // BaseTreeVisitor visits operands with accept(), which bypasses scan()
+        scan(t.leftOperand());
+        scan(t.rightOperand());
+      }
+
+      @Override
       public void visitLambdaExpression(LambdaExpressionTree t) {
         // not executed in place
       }

@@ -657,9 +657,19 @@ public final class BytecodeScanner implements Opcodes {
             lambda = true;
           }
         }
-        out.add(new TryFacts(tcb.type, lines[insns.indexOf(tcb.handler)], Set.copyOf(keys), lambda));
+        out.add(new TryFacts(tcb.type, firstLineFrom(insns.indexOf(tcb.handler)), Set.copyOf(keys), lambda));
       }
       return out;
+    }
+
+    /** First line number at or after an instruction (a handler label carries the line of the code before it). */
+    private int firstLineFrom(int index) {
+      for (int i = index; i < insns.size(); i++) {
+        if (insns.get(i) instanceof LineNumberNode ln) {
+          return ln.line;
+        }
+      }
+      return lines[index];
     }
 
     private static boolean isDiscarded(AbstractInsnNode call) {
