@@ -339,7 +339,9 @@ public final class TaintScanner implements Opcodes {
           case GETSTATIC:
             FieldInsnNode f = (FieldInsnNode) insn;
             Type t = Type.getType(f.desc);
-            Set<String> l = models.isSecretName(f.name) && isSecretType(t) && !"java/lang/System".equals(f.owner)
+            String fieldKind = models.source(f.owner, f.name);
+            Set<String> l = fieldKind != null ? Set.of(source(fieldKind, f.owner.substring(f.owner.lastIndexOf('/') + 1) + "." + f.name))
+              : models.isSecretName(f.name) && isSecretType(t) && !"java/lang/System".equals(f.owner)
               ? Set.of(source("SECRET", "field \"" + f.name + "\"")) : Set.of();
             return new TV(t.getSize(), l, -1, "static:" + f.owner + "#" + f.name);
           case NEW:
@@ -488,7 +490,9 @@ public final class TaintScanner implements Opcodes {
           }
           sink(sink.kind(), l, display(mi.owner, mi.name));
         }
-        if ("<init>".equals(mi.name) && mi.owner.matches(".*(Exception|Error)") && !argLabels.isEmpty()) {
+        // only "new X(secret)": super(...) inside exception constructors would repeat the same flow
+        if ("<init>".equals(mi.name) && mi.owner.matches(".*(Exception|Error)") && !argLabels.isEmpty()
+          && receiver != null && receiver.origin() != null && receiver.origin().startsWith("new@")) {
           sink("EXCEPTION", argLabels, "new " + mi.owner.substring(mi.owner.lastIndexOf('/') + 1) + "()");
         }
         if (ret == Type.VOID_TYPE) {
@@ -625,8 +629,12 @@ public final class TaintScanner implements Opcodes {
         }
         String p = models.propagation(mi.owner, mi.name);
         boolean mutates = ("append".equals(mi.name) || "insert".equals(mi.name)) && "all".equals(p)
-          || p != null && Set.of("add", "addAll", "put", "putAll", "set", "offer", "push", "addFirst", "addLast", "putIfAbsent", "command").contains(mi.name)
+          || p != null && Set.of("add", "addAll", "put", "putAll", "set", "offer", "push", "addFirst", "addLast", "putIfAbsent", "command", "load").contains(mi.name)
           || "<init>".equals(mi.name) && ("args".equals(p) || "all".equals(p) || models.propagation(mi.owner, "<init>") != null);
+        String ctorSource = "<init>".equals(mi.name) ? models.source(mi.owner, "<init>") : null;
+        if (receiver != null && ctorSource != null) {
+          taintObject(out, receiver, Set.of(source(ctorSource, "new " + mi.owner.substring(mi.owner.lastIndexOf('/') + 1) + "()")));
+        }
         if (receiver != null && mutates && !argLabels.isEmpty()) {
           if ("put".equals(mi.name) && argc == 2 && keyOf(f.getStack(sp - 2)) != null) {
             String key = keyOf(f.getStack(sp - 2));
@@ -638,8 +646,8 @@ public final class TaintScanner implements Opcodes {
           }
         }
         // allow-list and prefix checks clear the checked value
-        if (receiver != null && Set.of("startsWith", "equals", "matches", "equalsIgnoreCase").contains(mi.name)
-          && (mi.owner.equals("java/lang/String") || mi.owner.equals("java/nio/file/Path"))) {
+        if (receiver != null && (Set.of("equals", "matches", "equalsIgnoreCase").contains(mi.name) && mi.owner.equals("java/lang/String")
+          || "startsWith".equals(mi.name) && mi.owner.equals("java/nio/file/Path"))) {
           clear(out, receiver);
         }
         if ("contains".equals(mi.name) && argc == 1 && (mi.owner.startsWith("java/util/") && mi.owner.matches(".*(Set|List|Collection)"))) {

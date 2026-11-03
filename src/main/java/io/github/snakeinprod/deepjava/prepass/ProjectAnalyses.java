@@ -99,7 +99,7 @@ final class ProjectAnalyses implements Opcodes {
     ignored.forEach((k, sites) -> {
       Summaries.Call c = Summaries.parse(k);
       // only project methods: JDK results such as Iterator.next() are often skipped on purpose
-      if (c.desc().endsWith(")L" + c.owner() + ";") || s.targets(k).isEmpty() || s.neverReturns(k)) {
+      if (c.desc().endsWith(")L" + c.owner() + ";") || c.desc().endsWith(")Ljava/lang/Object;") || s.targets(k).isEmpty() || s.neverReturns(k)) {
         return;
       }
       int u = used.getOrDefault(k, 0);
@@ -300,7 +300,7 @@ final class ProjectAnalyses implements Opcodes {
 
   private static String lockName(String id) {
     if (id.startsWith("this:")) {
-      return "\"this\"";
+      return "\"" + Summaries.simpleName(id.substring(5)) + ".this\"";
     }
     if (id.startsWith("class:")) {
       return "\"" + Summaries.simpleName(id.substring(6)) + ".class\"";
@@ -563,7 +563,8 @@ final class ProjectAnalyses implements Opcodes {
         }
         continue;
       }
-      if (targets.size() > t.maxTargets()) {
+      // abstract targets: implementations may be lambdas the analysis cannot see
+      if (targets.size() > t.maxTargets() || targets.stream().anyMatch(x -> (x.facts().info().access() & ACC_ABSTRACT) != 0)) {
         return true;
       }
       for (Method tm : targets) {

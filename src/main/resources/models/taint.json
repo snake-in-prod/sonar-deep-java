@@ -64,7 +64,12 @@
     "jakarta/servlet/http/HttpServletRequest#getParameterNames": "USER",
     "jakarta/servlet/http/HttpServletRequest#getHeaderNames": "USER",
     "jakarta/servlet/http/HttpServletRequest#getRemoteUser": "USER",
-    "jakarta/servlet/http/HttpServletRequest#getPathTranslated": "USER"
+    "jakarta/servlet/http/HttpServletRequest#getPathTranslated": "USER",
+    "java/net/URLConnection#getInputStream": "NET",
+    "java/net/HttpURLConnection#getInputStream": "NET",
+    "java/io/FileInputStream#<init>": "FILE",
+    "java/io/FileReader#<init>": "FILE",
+    "java/lang/System#in": "CMDLINE"
   },
   "sourceParameterAnnotations": {
     "RequestParam": "USER",
@@ -88,7 +93,7 @@
     "SqsListener",
     "StreamListener"
   ],
-  "secretNames": "(?i).*(password|passwd|pwd|secret|apikey|api_key|privatekey|private_key|accesstoken|access_token|credential).*",
+  "secretNames": "(?i)(.*[_a-z])?(password|passwd|pwd|secret|apikey|api_key|privatekey|private_key|accesstoken|access_token|refreshtoken|credentials?)",
   "sinks": {
     "java/sql/Statement#execute": {
       "kind": "SQL",
@@ -571,9 +576,9 @@
       ]
     },
     "java/io/PrintStream#printf": {
-      "kind": "STDOUT",
+      "kind": "FORMAT",
       "args": [
-        1
+        0
       ]
     },
     "javax/servlet/http/HttpServletResponse#setHeader": {
@@ -801,6 +806,18 @@
       "args": [
         0
       ]
+    },
+    "javax/servlet/http/Cookie#<init>": {
+      "kind": "HEADER",
+      "args": [
+        1
+      ]
+    },
+    "jakarta/servlet/http/Cookie#<init>": {
+      "kind": "HEADER",
+      "args": [
+        1
+      ]
     }
   },
   "propagators": {
@@ -879,7 +896,13 @@
     "java/lang/String#split": "receiver",
     "java/lang/Object#toString": "receiver",
     "java/lang/String#toString": "receiver",
-    "org/apache/commons/lang/StringEscapeUtils#unescapeHtml": "args"
+    "org/apache/commons/lang/StringEscapeUtils#unescapeHtml": "args",
+    "java/util/StringTokenizer#<init>": "args",
+    "java/util/StringTokenizer": "receiver",
+    "java/util/Properties": "receiver",
+    "java/util/Properties#load": "all",
+    "java/io/InputStreamReader": "receiver",
+    "java/io/BufferedInputStream#<init>": "args"
   },
   "sanitizers": [
     "java/util/UUID#fromString",

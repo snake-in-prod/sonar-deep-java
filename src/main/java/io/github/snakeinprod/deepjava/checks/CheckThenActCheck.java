@@ -22,7 +22,8 @@ public class CheckThenActCheck extends DeepCheck {
 
   public static final String KEY = "CheckThenActOutsideLock";
 
-  private static final Set<String> READS = Set.of("get", "containsKey", "contains", "isEmpty", "size", "containsValue", "equals", "length");
+  private static final Set<String> MUTATORS = Set.of("put", "putAll", "putIfAbsent", "add", "addAll", "remove", "removeAll", "clear", "set",
+    "compute", "computeIfAbsent", "computeIfPresent", "merge", "offer", "push", "poll", "replace");
 
   public CheckThenActCheck(Supplier<Summaries> summaries) {
     super(summaries);
@@ -77,6 +78,6 @@ public class CheckThenActCheck extends DeepCheck {
   private static boolean writes(SynchronizedStatementTree sync, Symbol f) {
     return Trees.any(sync.block(), AssignmentExpressionTree.class, a -> f.equals(Trees.symbol(a.variable())))
       || Trees.any(sync.block(), MethodInvocationTree.class, m -> Trees.receiver(m) != null && f.equals(Trees.symbol(Trees.receiver(m)))
-        && !READS.contains(Trees.name(m)));
+        && MUTATORS.contains(Trees.name(m)));
   }
 }
