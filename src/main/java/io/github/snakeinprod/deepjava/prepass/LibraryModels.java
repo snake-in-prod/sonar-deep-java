@@ -31,6 +31,8 @@ public final class LibraryModels {
 
   private final Set<String> nullableReturns = new HashSet<>();
   private final Map<String, Set<String>> guards = new HashMap<>();
+  private final Map<String, String> uncheckedThrows = new HashMap<>();
+  private final Set<String> resourceFactories = new HashSet<>();
 
   /** A matched model entry. */
   public record Match(String entry, Set<String> guards) {
@@ -39,6 +41,8 @@ public final class LibraryModels {
   private static final class Json {
     List<String> nullableReturns = List.of();
     Map<String, List<String>> guards = Map.of();
+    Map<String, String> uncheckedThrows = Map.of();
+    List<String> resourceFactories = List.of();
   }
 
   public static LibraryModels load(List<Path> userFiles) throws IOException {
@@ -62,6 +66,29 @@ public final class LibraryModels {
     if (json.guards != null) {
       json.guards.forEach((k, v) -> guards.computeIfAbsent(k, x -> new HashSet<>()).addAll(v));
     }
+    if (json.uncheckedThrows != null) {
+      uncheckedThrows.putAll(json.uncheckedThrows);
+    }
+    if (json.resourceFactories != null) {
+      resourceFactories.addAll(json.resourceFactories);
+    }
+  }
+
+  /** Unchecked exception a library method throws on bad input (e.g. {@code Integer.parseInt}), or null. */
+  public String uncheckedThrow(String owner, String name, String desc) {
+    String byName = owner + "#" + name;
+    String t = uncheckedThrows.get(byName + desc);
+    return t != null ? t : uncheckedThrows.get(byName);
+  }
+
+  /** The method returns a new resource the caller must close ({@code Files.newInputStream}). */
+  public boolean isResourceFactory(String owner, String name, Hierarchy hierarchy) {
+    for (String type : hierarchy.selfAndSupertypes(owner)) {
+      if (resourceFactories.contains(type + "#" + name)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Looks up {@code owner#name desc} on the owner and its supertypes. */

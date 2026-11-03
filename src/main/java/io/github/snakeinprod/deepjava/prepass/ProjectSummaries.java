@@ -3,8 +3,9 @@ package io.github.snakeinprod.deepjava.prepass;
 import io.github.snakeinprod.deepjava.DeepJavaPlugin;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
+import java.io.ObjectInputFilter;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
@@ -43,7 +44,7 @@ import org.sonar.api.config.Configuration;
 public class ProjectSummaries implements Supplier<Summaries> {
 
   private static final Logger LOG = LoggerFactory.getLogger(ProjectSummaries.class);
-  private static final int CACHE_FORMAT = 7;
+  private static final int CACHE_FORMAT = 8;
   private static final Set<String> SKIP_DIRS = Set.of(".git", "node_modules", "src", ".scannerwork", ".gradle", ".idea");
 
   private final Configuration config;
@@ -92,6 +93,8 @@ public class ProjectSummaries implements Supplier<Summaries> {
       config.getInt(DeepJavaPlugin.MIN_SITES).orElse(5),
       config.getDouble(DeepJavaPlugin.MIN_RATIO).orElse(0.8));
     List<Path> models = resolve(baseDir, config.getStringArray(DeepJavaPlugin.MODELS));
+    TaintModels taintModels = TaintModels.load(models);
+    String version = CACHE_FORMAT + ":" + maxSteps + ":" + taintModels.digest();
     if (!discovered) {
       binaries.addAll(discoverOutputDirs(baseDir));
       discovered = true;
@@ -103,12 +106,12 @@ public class ProjectSummaries implements Supplier<Summaries> {
     Map<String, ClassFacts> byName = new HashMap<>();
     int[] hits = {0};
     forEachClass(binaries, bytes -> {
-      String key = sha256(bytes) + ":" + maxSteps;
+      String key = sha256(bytes) + ":" + version;
       ClassFacts f = cache.get(key);
       if (f != null) {
         hits[0]++;
       } else {
-        f = BytecodeScanner.scan(bytes, maxSteps);
+        f = BytecodeScanner.scan(bytes, maxSteps, taintModels);
       }
       used.put(key, f);
       byName.putIfAbsent(f.name(), f);
@@ -221,36 +224,30 @@ public class ProjectSummaries implements Supplier<Summaries> {
     return dir.resolve(sha256(baseDir.toAbsolutePath().toString().getBytes()).substring(0, 16) + ".bin");
   }
 
-  private static Map<String, ClassFacts> readCache(Path file) {
-    Map<String, ClassFacts> m = new HashMap<>();
+  /** Only our fact records and JDK collections may be deserialised from the cache file. */
+  private static final ObjectInputFilter CACHE_FILTER = ObjectInputFilter.Config.createFilter(
+    "io.github.snakeinprod.deepjava.prepass.ClassFacts*;java.util.*;java.lang.*;maxdepth=64;!*");
+
+  @SuppressWarnings("unchecked")
+  static Map<String, ClassFacts> readCache(Path file) {
     if (!Files.exists(file)) {
-      return m;
+      return new HashMap<>();
     }
-    try (DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(file)))) {
-      if (in.readInt() != CACHE_FORMAT) {
-        return m;
-      }
-      for (int n = in.readInt(); n > 0; n--) {
-        m.put(in.readUTF(), ClassFacts.read(in));
-      }
-    } catch (IOException | RuntimeException e) {
+    try (ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(Files.newInputStream(file)))) {
+      in.setObjectInputFilter(CACHE_FILTER);
+      return new HashMap<>((Map<String, ClassFacts>) in.readObject());
+    } catch (IOException | ClassNotFoundException | RuntimeException e) {
       LOG.warn("Deep Java: ignoring unreadable cache {}", file);
-      m.clear();
+      return new HashMap<>();
     }
-    return m;
   }
 
-  private static void writeCache(Path file, Map<String, ClassFacts> entries) {
+  static void writeCache(Path file, Map<String, ClassFacts> entries) {
     try {
       Files.createDirectories(file.getParent());
       Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-      try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(tmp)))) {
-        out.writeInt(CACHE_FORMAT);
-        out.writeInt(entries.size());
-        for (Map.Entry<String, ClassFacts> e : entries.entrySet()) {
-          out.writeUTF(e.getKey());
-          e.getValue().write(out);
-        }
+      try (ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(Files.newOutputStream(tmp)))) {
+        out.writeObject(new HashMap<>(entries));
       }
       Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     } catch (IOException e) {

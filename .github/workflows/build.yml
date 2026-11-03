@@ -22,8 +22,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           TAG: ${{ github.ref_name }}
-        run: ./mvnw -B -q versions:set -DnewVersion="${TAG#v}" -DgenerateBackupPoms=false
-      - run: ./mvnw -B verify
+        run: mvn -B -q versions:set -DnewVersion="${TAG#v}" -DgenerateBackupPoms=false
+      - run: mvn -B verify
       - uses: actions/upload-artifact@v4
         with:
           name: sonar-deep-java

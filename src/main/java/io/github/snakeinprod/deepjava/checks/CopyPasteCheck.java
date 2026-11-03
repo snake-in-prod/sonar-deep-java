@@ -1,0 +1,102 @@
+package io.github.snakeinprod.deepjava.checks;
+
+import io.github.snakeinprod.deepjava.prepass.Summaries;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Supplier;
+import org.sonar.check.Rule;
+import org.sonar.plugins.java.api.semantic.Symbol;
+import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
+import org.sonar.plugins.java.api.tree.BinaryExpressionTree;
+import org.sonar.plugins.java.api.tree.BlockTree;
+import org.sonar.plugins.java.api.tree.ExpressionStatementTree;
+import org.sonar.plugins.java.api.tree.ExpressionTree;
+import org.sonar.plugins.java.api.tree.IdentifierTree;
+import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
+import org.sonar.plugins.java.api.tree.MethodInvocationTree;
+import org.sonar.plugins.java.api.tree.StatementTree;
+import org.sonar.plugins.java.api.tree.Tree;
+import org.sonar.plugins.java.api.tree.VariableTree;
+
+/** Next to {@code a.x - b.x}, the expression {@code a.y - b.x} probably meant {@code b.y}. */
+@Rule(key = CopyPasteCheck.KEY)
+public class CopyPasteCheck extends DeepCheck {
+
+  public static final String KEY = "CopyPasteIdentifier";
+
+  public CopyPasteCheck(Supplier<Summaries> summaries) {
+    super(summaries);
+  }
+
+  @Override
+  public List<Tree.Kind> nodesToVisit() {
+    return List.of(Tree.Kind.BLOCK, Tree.Kind.METHOD_INVOCATION);
+  }
+
+  /** {@code left.lp OP right.rp}. */
+  private record Pair(BinaryExpressionTree tree, Symbol left, String lp, Symbol right, String rp, ExpressionTree rightOperand,
+    ExpressionTree leftOperand) {
+  }
+
+  @Override
+  public void visitNode(Tree tree) {
+    List<ExpressionTree> exprs = new ArrayList<>();
+    if (tree instanceof BlockTree block) {
+      for (StatementTree s : block.body()) {
+        ExpressionTree e = switch (s) {
+          case VariableTree v -> v.initializer();
+          case ExpressionStatementTree es when es.expression() instanceof AssignmentExpressionTree a -> a.expression();
+          default -> null;
+        };
+        exprs.add(e);
+      }
+    } else {
+      exprs.addAll(((MethodInvocationTree) tree).arguments());
+    }
+    List<Pair> pairs = new ArrayList<>();
+    for (ExpressionTree e : exprs) {
+      pairs.add(e == null ? null : pair(Trees.skip(e)));
+    }
+    for (int i = 1; i < pairs.size(); i++) {
+      Pair ref = pairs.get(i - 1);
+      Pair p = pairs.get(i);
+      if (ref == null || p == null || !ref.lp().equals(ref.rp()) || !ref.tree().operatorToken().text().equals(p.tree().operatorToken().text())
+        || !ref.left().equals(p.left()) || !ref.right().equals(p.right())) {
+        continue;
+      }
+      if (!p.lp().equals(p.rp()) && p.rp().equals(ref.rp()) && !p.lp().equals(ref.lp())) {
+        reportIssue(p.rightOperand(), "\"" + p.right().name() + "." + p.rp() + "\" looks copied from the line above; did you mean \""
+          + p.right().name() + "." + p.lp() + "\"?");
+      } else if (!p.lp().equals(p.rp()) && p.lp().equals(ref.lp()) && !p.rp().equals(ref.rp())) {
+        reportIssue(p.leftOperand(), "\"" + p.left().name() + "." + p.lp() + "\" looks copied from the line above; did you mean \""
+          + p.left().name() + "." + p.rp() + "\"?");
+      }
+    }
+  }
+
+  private static Pair pair(ExpressionTree e) {
+    if (!(e instanceof BinaryExpressionTree b) || !b.is(Tree.Kind.MINUS, Tree.Kind.PLUS, Tree.Kind.MULTIPLY, Tree.Kind.DIVIDE,
+      Tree.Kind.LESS_THAN, Tree.Kind.GREATER_THAN, Tree.Kind.EQUAL_TO, Tree.Kind.NOT_EQUAL_TO)) {
+      return null;
+    }
+    Object[] l = member(b.leftOperand());
+    Object[] r = member(b.rightOperand());
+    if (l == null || r == null || l[0].equals(r[0])) {
+      return null;
+    }
+    return new Pair(b, (Symbol) l[0], (String) l[1], (Symbol) r[0], (String) r[1], b.rightOperand(), b.leftOperand());
+  }
+
+  /** {@code a.x} or {@code a.getX()} as {owner symbol, property}. */
+  private static Object[] member(ExpressionTree e) {
+    e = Trees.skip(e);
+    if (e instanceof MethodInvocationTree m && m.arguments().isEmpty()) {
+      e = m.methodSelect();
+    }
+    if (e instanceof MemberSelectExpressionTree ms && ms.expression() instanceof IdentifierTree id && !id.symbol().isUnknown()
+      && id.symbol().isVariableSymbol()) {
+      return new Object[] {id.symbol(), ms.identifier().name()};
+    }
+    return null;
+  }
+}

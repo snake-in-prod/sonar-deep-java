@@ -1,0 +1,841 @@
+{
+  "sources": {
+    "javax/servlet/ServletRequest#getParameter": "USER",
+    "javax/servlet/ServletRequest#getParameterValues": "USER",
+    "javax/servlet/ServletRequest#getParameterMap": "USER",
+    "javax/servlet/ServletRequest#getInputStream": "USER",
+    "javax/servlet/ServletRequest#getReader": "USER",
+    "javax/servlet/http/HttpServletRequest#getParameter": "USER",
+    "javax/servlet/http/HttpServletRequest#getParameterValues": "USER",
+    "javax/servlet/http/HttpServletRequest#getParameterMap": "USER",
+    "javax/servlet/http/HttpServletRequest#getHeader": "USER",
+    "javax/servlet/http/HttpServletRequest#getHeaders": "USER",
+    "javax/servlet/http/HttpServletRequest#getQueryString": "USER",
+    "javax/servlet/http/HttpServletRequest#getRequestURI": "USER",
+    "javax/servlet/http/HttpServletRequest#getRequestURL": "USER",
+    "javax/servlet/http/HttpServletRequest#getPathInfo": "USER",
+    "javax/servlet/http/HttpServletRequest#getInputStream": "USER",
+    "javax/servlet/http/HttpServletRequest#getReader": "USER",
+    "javax/servlet/http/HttpServletRequest#getCookies": "COOKIE",
+    "jakarta/servlet/ServletRequest#getParameter": "USER",
+    "jakarta/servlet/ServletRequest#getParameterValues": "USER",
+    "jakarta/servlet/ServletRequest#getParameterMap": "USER",
+    "jakarta/servlet/ServletRequest#getInputStream": "USER",
+    "jakarta/servlet/ServletRequest#getReader": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getParameter": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getParameterValues": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getParameterMap": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getHeader": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getHeaders": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getQueryString": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getRequestURI": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getRequestURL": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getPathInfo": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getInputStream": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getReader": "USER",
+    "jakarta/servlet/http/HttpServletRequest#getCookies": "COOKIE",
+    "org/springframework/web/server/ServerWebExchange#getRequest": "USER",
+    "java/lang/System#getenv": "ENV",
+    "java/net/Socket#getInputStream": "NET",
+    "java/nio/channels/SocketChannel#read": "NET",
+    "java/io/ObjectInputStream#readObject": "DESER",
+    "java/nio/file/Files#readAllLines": "FILE",
+    "java/nio/file/Files#readString": "FILE",
+    "java/nio/file/Files#readAllBytes": "FILE",
+    "java/nio/file/Files#lines": "FILE",
+    "com/auth0/jwt/JWT#decode": "JWT",
+    "io/jsonwebtoken/JwtParser#parseClaimsJwt": "JWT",
+    "io/jsonwebtoken/JwtParser#parseUnsecuredClaims": "JWT",
+    "*#getPassword": "SECRET",
+    "*#getPasswd": "SECRET",
+    "*#getSecret": "SECRET",
+    "*#getClientSecret": "SECRET",
+    "*#getApiKey": "SECRET",
+    "*#getPrivateKey": "SECRET",
+    "*#getAccessToken": "SECRET",
+    "*#getRefreshToken": "SECRET",
+    "*#getCredentials": "SECRET"
+  },
+  "sourceParameterAnnotations": {
+    "RequestParam": "USER",
+    "PathVariable": "USER",
+    "RequestBody": "USER",
+    "RequestHeader": "USER",
+    "RequestPart": "USER",
+    "ModelAttribute": "USER",
+    "MatrixVariable": "USER",
+    "CookieValue": "COOKIE",
+    "QueryParam": "USER",
+    "PathParam": "USER",
+    "FormParam": "USER",
+    "HeaderParam": "USER",
+    "CookieParam": "COOKIE"
+  },
+  "listenerAnnotations": [
+    "KafkaListener",
+    "RabbitListener",
+    "JmsListener",
+    "SqsListener",
+    "StreamListener"
+  ],
+  "secretNames": "(?i).*(password|passwd|pwd|secret|apikey|api_key|privatekey|private_key|accesstoken|access_token|credential).*",
+  "sinks": {
+    "java/sql/Statement#execute": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "java/sql/Statement#executeQuery": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "java/sql/Statement#executeUpdate": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "java/sql/Statement#executeLargeUpdate": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "java/sql/Statement#addBatch": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "java/sql/Connection#prepareStatement": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "java/sql/Connection#prepareCall": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "java/sql/Connection#nativeSQL": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "javax/persistence/EntityManager#createQuery": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "javax/persistence/EntityManager#createNativeQuery": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "jakarta/persistence/EntityManager#createQuery": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "jakarta/persistence/EntityManager#createNativeQuery": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/hibernate/Session#createQuery": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/hibernate/Session#createNativeQuery": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/hibernate/Session#createSQLQuery": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/jdbc/core/JdbcTemplate#query": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/jdbc/core/JdbcTemplate#queryForObject": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/jdbc/core/JdbcTemplate#queryForList": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/jdbc/core/JdbcTemplate#queryForMap": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/jdbc/core/JdbcTemplate#update": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/jdbc/core/JdbcTemplate#execute": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/jdbc/core/JdbcTemplate#batchUpdate": {
+      "kind": "SQL",
+      "args": [
+        0
+      ]
+    },
+    "java/lang/Runtime#exec": {
+      "kind": "COMMAND",
+      "args": [
+        0
+      ]
+    },
+    "java/lang/ProcessBuilder#<init>": {
+      "kind": "COMMAND",
+      "args": [
+        0
+      ]
+    },
+    "java/lang/ProcessBuilder#command": {
+      "kind": "COMMAND",
+      "args": [
+        0
+      ]
+    },
+    "java/io/File#<init>": {
+      "kind": "PATH",
+      "args": [
+        0,
+        1
+      ]
+    },
+    "java/io/FileInputStream#<init>": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/io/FileOutputStream#<init>": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/io/FileReader#<init>": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/io/FileWriter#<init>": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/io/RandomAccessFile#<init>": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Paths#get": {
+      "kind": "PATH",
+      "args": [
+        0,
+        1
+      ]
+    },
+    "java/nio/file/Path#of": {
+      "kind": "PATH",
+      "args": [
+        0,
+        1
+      ]
+    },
+    "java/nio/file/Path#resolve": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/net/URL#openConnection": {
+      "kind": "SSRF",
+      "args": [
+        -1
+      ]
+    },
+    "java/net/URL#openStream": {
+      "kind": "SSRF",
+      "args": [
+        -1
+      ]
+    },
+    "java/net/Socket#<init>": {
+      "kind": "SSRF",
+      "args": [
+        0
+      ]
+    },
+    "java/net/http/HttpRequest#newBuilder": {
+      "kind": "SSRF",
+      "args": [
+        0
+      ]
+    },
+    "java/net/http/HttpRequest$Builder#uri": {
+      "kind": "SSRF",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/web/client/RestTemplate#getForObject": {
+      "kind": "SSRF",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/web/client/RestTemplate#getForEntity": {
+      "kind": "SSRF",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/web/client/RestTemplate#postForObject": {
+      "kind": "SSRF",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/web/client/RestTemplate#postForEntity": {
+      "kind": "SSRF",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/web/client/RestTemplate#exchange": {
+      "kind": "SSRF",
+      "args": [
+        0
+      ]
+    },
+    "org/apache/http/client/methods/HttpGet#<init>": {
+      "kind": "SSRF",
+      "args": [
+        0
+      ]
+    },
+    "org/apache/http/client/methods/HttpPost#<init>": {
+      "kind": "SSRF",
+      "args": [
+        0
+      ]
+    },
+    "okhttp3/Request$Builder#url": {
+      "kind": "SSRF",
+      "args": [
+        0
+      ]
+    },
+    "javax/naming/directory/DirContext#search": {
+      "kind": "LDAP",
+      "args": [
+        1
+      ]
+    },
+    "javax/naming/directory/InitialDirContext#search": {
+      "kind": "LDAP",
+      "args": [
+        1
+      ]
+    },
+    "javax/naming/ldap/LdapContext#search": {
+      "kind": "LDAP",
+      "args": [
+        1
+      ]
+    },
+    "org/springframework/ldap/core/LdapTemplate#search": {
+      "kind": "LDAP",
+      "args": [
+        1
+      ]
+    },
+    "javax/xml/xpath/XPath#compile": {
+      "kind": "XPATH",
+      "args": [
+        0
+      ]
+    },
+    "javax/xml/xpath/XPath#evaluate": {
+      "kind": "XPATH",
+      "args": [
+        0
+      ]
+    },
+    "org/slf4j/Logger#trace": {
+      "kind": "LOG",
+      "args": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "org/slf4j/Logger#debug": {
+      "kind": "LOG",
+      "args": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "org/slf4j/Logger#info": {
+      "kind": "LOG",
+      "args": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "org/slf4j/Logger#warn": {
+      "kind": "LOG",
+      "args": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "org/slf4j/Logger#error": {
+      "kind": "LOG",
+      "args": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "org/apache/logging/log4j/Logger#trace": {
+      "kind": "LOG",
+      "args": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "org/apache/logging/log4j/Logger#debug": {
+      "kind": "LOG",
+      "args": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "org/apache/logging/log4j/Logger#info": {
+      "kind": "LOG",
+      "args": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "org/apache/logging/log4j/Logger#warn": {
+      "kind": "LOG",
+      "args": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "org/apache/logging/log4j/Logger#error": {
+      "kind": "LOG",
+      "args": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "org/apache/commons/logging/Log#info": {
+      "kind": "LOG",
+      "args": [
+        0
+      ]
+    },
+    "org/apache/commons/logging/Log#warn": {
+      "kind": "LOG",
+      "args": [
+        0
+      ]
+    },
+    "org/apache/commons/logging/Log#error": {
+      "kind": "LOG",
+      "args": [
+        0
+      ]
+    },
+    "org/apache/commons/logging/Log#debug": {
+      "kind": "LOG",
+      "args": [
+        0
+      ]
+    },
+    "java/util/logging/Logger#info": {
+      "kind": "LOG",
+      "args": [
+        0
+      ]
+    },
+    "java/util/logging/Logger#warning": {
+      "kind": "LOG",
+      "args": [
+        0
+      ]
+    },
+    "java/util/logging/Logger#severe": {
+      "kind": "LOG",
+      "args": [
+        0
+      ]
+    },
+    "java/util/logging/Logger#fine": {
+      "kind": "LOG",
+      "args": [
+        0
+      ]
+    },
+    "java/util/logging/Logger#log": {
+      "kind": "LOG",
+      "args": [
+        1,
+        2
+      ]
+    },
+    "java/io/PrintStream#println": {
+      "kind": "STDOUT",
+      "args": [
+        0
+      ]
+    },
+    "java/io/PrintStream#print": {
+      "kind": "STDOUT",
+      "args": [
+        0
+      ]
+    },
+    "java/io/PrintStream#printf": {
+      "kind": "STDOUT",
+      "args": [
+        1
+      ]
+    },
+    "javax/servlet/http/HttpServletResponse#setHeader": {
+      "kind": "HEADER",
+      "args": [
+        1
+      ]
+    },
+    "javax/servlet/http/HttpServletResponse#addHeader": {
+      "kind": "HEADER",
+      "args": [
+        1
+      ]
+    },
+    "jakarta/servlet/http/HttpServletResponse#setHeader": {
+      "kind": "HEADER",
+      "args": [
+        1
+      ]
+    },
+    "jakarta/servlet/http/HttpServletResponse#addHeader": {
+      "kind": "HEADER",
+      "args": [
+        1
+      ]
+    },
+    "javax/servlet/http/HttpServletResponse#sendRedirect": {
+      "kind": "REDIRECT",
+      "args": [
+        0
+      ]
+    },
+    "jakarta/servlet/http/HttpServletResponse#sendRedirect": {
+      "kind": "REDIRECT",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/web/servlet/view/RedirectView#<init>": {
+      "kind": "REDIRECT",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/expression/ExpressionParser#parseExpression": {
+      "kind": "EXPRESSION",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/expression/spel/standard/SpelExpressionParser#parseExpression": {
+      "kind": "EXPRESSION",
+      "args": [
+        0
+      ]
+    },
+    "org/springframework/expression/common/TemplateAwareExpressionParser#parseExpression": {
+      "kind": "EXPRESSION",
+      "args": [
+        0
+      ]
+    },
+    "ognl/Ognl#getValue": {
+      "kind": "EXPRESSION",
+      "args": [
+        0
+      ]
+    },
+    "ognl/Ognl#parseExpression": {
+      "kind": "EXPRESSION",
+      "args": [
+        0
+      ]
+    },
+    "javax/el/ExpressionFactory#createValueExpression": {
+      "kind": "EXPRESSION",
+      "args": [
+        1
+      ]
+    },
+    "jakarta/el/ExpressionFactory#createValueExpression": {
+      "kind": "EXPRESSION",
+      "args": [
+        1
+      ]
+    },
+    "javax/el/ELProcessor#eval": {
+      "kind": "EXPRESSION",
+      "args": [
+        0
+      ]
+    },
+    "jakarta/el/ELProcessor#eval": {
+      "kind": "EXPRESSION",
+      "args": [
+        0
+      ]
+    },
+    "java/lang/String#format": {
+      "kind": "FORMAT",
+      "args": [
+        0
+      ]
+    },
+    "java/lang/String#formatted": {
+      "kind": "FORMAT",
+      "args": [
+        -1
+      ]
+    },
+    "java/io/PrintStream#format": {
+      "kind": "FORMAT",
+      "args": [
+        0
+      ]
+    },
+    "java/util/Formatter#format": {
+      "kind": "FORMAT",
+      "args": [
+        0
+      ]
+    },
+    "java/util/ArrayList#<init>": {
+      "kind": "SIZE",
+      "args": [
+        0
+      ]
+    },
+    "java/util/HashMap#<init>": {
+      "kind": "SIZE",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/ByteBuffer#allocate": {
+      "kind": "SIZE",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/ByteBuffer#allocateDirect": {
+      "kind": "SIZE",
+      "args": [
+        0
+      ]
+    },
+    "java/util/List#get": {
+      "kind": "SIZE",
+      "args": [
+        0
+      ]
+    },
+    "java/lang/String#charAt": {
+      "kind": "SIZE",
+      "args": [
+        0
+      ]
+    },
+    "java/lang/String#substring": {
+      "kind": "SIZE",
+      "args": [
+        0,
+        1
+      ]
+    },
+    "java/lang/String#equals": {
+      "kind": "DECISION",
+      "args": [
+        -1,
+        0
+      ]
+    },
+    "java/lang/String#equalsIgnoreCase": {
+      "kind": "DECISION",
+      "args": [
+        -1,
+        0
+      ]
+    },
+    "java/lang/String#contains": {
+      "kind": "DECISION",
+      "args": [
+        -1,
+        0
+      ]
+    },
+    "java/lang/Boolean#parseBoolean": {
+      "kind": "DECISION",
+      "args": [
+        0
+      ]
+    }
+  },
+  "propagators": {
+    "java/lang/String": "receiver",
+    "java/lang/StringBuilder": "all",
+    "java/lang/StringBuffer": "all",
+    "java/lang/CharSequence": "receiver",
+    "java/lang/String#valueOf": "args",
+    "java/lang/String#join": "args",
+    "java/lang/String#copyValueOf": "args",
+    "java/lang/String#format": "args",
+    "java/lang/String#<init>": "args",
+    "java/util/Objects#toString": "args",
+    "java/util/Objects#requireNonNull": "args",
+    "java/util/Optional": "all",
+    "java/util/List": "receiver",
+    "java/util/Collection": "receiver",
+    "java/util/Set": "receiver",
+    "java/util/Map": "receiver",
+    "java/util/Map$Entry": "receiver",
+    "java/util/Iterator": "receiver",
+    "java/util/Arrays#asList": "args",
+    "java/util/List#of": "args",
+    "java/net/URLDecoder#decode": "args",
+    "java/net/URI#create": "args",
+    "java/net/URI#<init>": "args",
+    "java/net/URI": "receiver",
+    "java/net/URL#<init>": "args",
+    "java/net/URL": "receiver",
+    "java/io/File#<init>": "args",
+    "java/io/File": "receiver",
+    "java/nio/file/Paths#get": "args",
+    "java/nio/file/Path#of": "args",
+    "java/nio/file/Path": "all",
+    "java/io/InputStreamReader#<init>": "args",
+    "java/io/BufferedReader#<init>": "args",
+    "java/io/BufferedReader": "receiver",
+    "java/io/Reader": "receiver",
+    "java/io/InputStream": "receiver",
+    "java/util/Scanner#<init>": "args",
+    "java/util/Scanner": "receiver",
+    "java/util/Base64$Decoder": "args",
+    "javax/servlet/http/Cookie": "receiver",
+    "jakarta/servlet/http/Cookie": "receiver",
+    "com/auth0/jwt/interfaces/DecodedJWT": "receiver",
+    "com/auth0/jwt/interfaces/Claim": "receiver",
+    "io/jsonwebtoken/Jwt": "receiver",
+    "io/jsonwebtoken/Claims": "receiver",
+    "com/fasterxml/jackson/databind/JsonNode": "receiver",
+    "com/fasterxml/jackson/databind/ObjectMapper#readTree": "args",
+    "com/fasterxml/jackson/databind/ObjectMapper#readValue": "args",
+    "org/springframework/http/server/reactive/ServerHttpRequest": "receiver",
+    "org/springframework/util/MultiValueMap": "receiver",
+    "java/lang/Integer#parseInt": "numeric",
+    "java/lang/Integer#valueOf": "numeric",
+    "java/lang/Long#parseLong": "numeric",
+    "java/lang/Long#valueOf": "numeric",
+    "java/lang/Short#parseShort": "numeric",
+    "java/lang/Integer#intValue": "numeric",
+    "java/lang/Long#intValue": "numeric",
+    "java/lang/String#length": "numeric"
+  },
+  "sanitizers": [
+    "java/util/UUID#fromString",
+    "java/lang/Math#min",
+    "java/lang/Math#max",
+    "java/lang/Math#floorMod",
+    "java/lang/Math#clamp",
+    "java/util/Objects#checkIndex",
+    "*#escape*",
+    "*#encode*",
+    "*#sanitize*",
+    "*#quote*",
+    "*#hash*",
+    "*#mask*",
+    "*#redact*",
+    "*#digest*",
+    "*#encrypt*",
+    "*#obfuscate*",
+    "*#forHtml*",
+    "*#forJava*",
+    "org/apache/commons/io/FilenameUtils#getName",
+    "java/nio/file/Path#getFileName",
+    "java/io/File#getName"
+  ]
+}

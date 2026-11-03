@@ -48,13 +48,97 @@
     "com/fasterxml/jackson/databind/JsonNode#get"
   ],
   "guards": {
-    "java/util/Map#get": ["containsKey", "keySet", "put", "putIfAbsent", "computeIfAbsent", "compute", "merge"],
-    "java/util/Queue#poll": ["isEmpty", "size"],
-    "java/util/Queue#peek": ["isEmpty", "size"],
-    "java/util/Deque#pollFirst": ["isEmpty", "size"],
-    "java/util/Deque#pollLast": ["isEmpty", "size"],
-    "java/util/Deque#peekFirst": ["isEmpty", "size"],
-    "java/util/Deque#peekLast": ["isEmpty", "size"],
-    "com/fasterxml/jackson/databind/JsonNode#get": ["has", "hasNonNull"]
-  }
+    "java/util/Map#get": [
+      "containsKey",
+      "keySet",
+      "put",
+      "putIfAbsent",
+      "computeIfAbsent",
+      "compute",
+      "merge"
+    ],
+    "java/util/Queue#poll": [
+      "isEmpty",
+      "size"
+    ],
+    "java/util/Queue#peek": [
+      "isEmpty",
+      "size"
+    ],
+    "java/util/Deque#pollFirst": [
+      "isEmpty",
+      "size"
+    ],
+    "java/util/Deque#pollLast": [
+      "isEmpty",
+      "size"
+    ],
+    "java/util/Deque#peekFirst": [
+      "isEmpty",
+      "size"
+    ],
+    "java/util/Deque#peekLast": [
+      "isEmpty",
+      "size"
+    ],
+    "com/fasterxml/jackson/databind/JsonNode#get": [
+      "has",
+      "hasNonNull"
+    ]
+  },
+  "uncheckedThrows": {
+    "java/lang/Integer#parseInt": "java/lang/NumberFormatException",
+    "java/lang/Integer#valueOf(Ljava/lang/String;)Ljava/lang/Integer;": "java/lang/NumberFormatException",
+    "java/lang/Long#parseLong": "java/lang/NumberFormatException",
+    "java/lang/Long#valueOf(Ljava/lang/String;)Ljava/lang/Long;": "java/lang/NumberFormatException",
+    "java/lang/Short#parseShort": "java/lang/NumberFormatException",
+    "java/lang/Byte#parseByte": "java/lang/NumberFormatException",
+    "java/lang/Double#parseDouble": "java/lang/NumberFormatException",
+    "java/lang/Float#parseFloat": "java/lang/NumberFormatException",
+    "java/math/BigDecimal#<init>(Ljava/lang/String;)V": "java/lang/NumberFormatException",
+    "java/math/BigInteger#<init>(Ljava/lang/String;)V": "java/lang/NumberFormatException",
+    "java/util/UUID#fromString": "java/lang/IllegalArgumentException",
+    "java/net/URI#create": "java/lang/IllegalArgumentException",
+    "java/util/Optional#get": "java/util/NoSuchElementException",
+    "java/util/Optional#orElseThrow()Ljava/lang/Object;": "java/util/NoSuchElementException",
+    "java/util/Iterator#next": "java/util/NoSuchElementException",
+    "java/util/Scanner#nextInt": "java/util/InputMismatchException",
+    "java/util/Scanner#nextLine": "java/util/NoSuchElementException",
+    "java/time/LocalDate#parse": "java/time/format/DateTimeParseException",
+    "java/time/LocalDateTime#parse": "java/time/format/DateTimeParseException",
+    "java/time/LocalTime#parse": "java/time/format/DateTimeParseException",
+    "java/time/Instant#parse": "java/time/format/DateTimeParseException",
+    "java/time/ZonedDateTime#parse": "java/time/format/DateTimeParseException",
+    "java/time/OffsetDateTime#parse": "java/time/format/DateTimeParseException",
+    "java/time/Duration#parse": "java/time/format/DateTimeParseException",
+    "java/lang/Enum#valueOf": "java/lang/IllegalArgumentException",
+    "com/fasterxml/jackson/databind/ObjectMapper#convertValue": "java/lang/IllegalArgumentException"
+  },
+  "resourceFactories": [
+    "java/nio/file/Files#newInputStream",
+    "java/nio/file/Files#newOutputStream",
+    "java/nio/file/Files#newBufferedReader",
+    "java/nio/file/Files#newBufferedWriter",
+    "java/nio/file/Files#newByteChannel",
+    "java/nio/file/Files#newDirectoryStream",
+    "java/nio/file/Files#lines",
+    "java/nio/file/Files#list",
+    "java/nio/file/Files#walk",
+    "java/nio/file/Files#find",
+    "java/sql/DriverManager#getConnection",
+    "javax/sql/DataSource#getConnection",
+    "java/sql/Connection#createStatement",
+    "java/sql/Connection#prepareStatement",
+    "java/sql/Connection#prepareCall",
+    "java/sql/Statement#executeQuery",
+    "java/sql/PreparedStatement#executeQuery",
+    "java/net/URL#openStream",
+    "java/net/ServerSocket#accept",
+    "java/nio/channels/FileChannel#open",
+    "java/nio/channels/SocketChannel#open",
+    "java/util/zip/ZipFile#getInputStream",
+    "java/lang/Process#getInputStream",
+    "java/lang/Class#getResourceAsStream",
+    "java/lang/ClassLoader#getResourceAsStream"
+  ]
 }
