@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Writes docs/deep-java-profile.xml: Sonar way + the sonar-findbugs families of the spec (section 10) + Deep Java.
+"""Writes docs/deep-java-profile.xml: the sonar-findbugs families of the spec (section 10) + the Deep Java rules.
 
-Usage: generate_profile.py <sonar-java-plugin.jar> <sonar-findbugs-plugin.jar> <deep-java rule keys file>
-The XML can be restored in SonarQube (Quality Profiles > Restore). Rules missing on the server are skipped there.
+Usage: generate_profile.py <sonar-findbugs-plugin.jar> <deep-java rule keys file>
+Restore the XML in SonarQube, then make "Sonar way" its parent, so the profile = Sonar way + these rules and
+follows Sonar way when the Java plugin is upgraded (see docs/adr/0001-installation-and-profile.md).
+Rules of plugins that are not installed are skipped by the restore.
 """
 import re
 import sys
@@ -10,12 +12,6 @@ import zipfile
 from xml.sax.saxutils import escape
 
 FINDBUGS_FAMILIES = ("NP_", "OS_", "ODR_", "OBL_", "RV_", "DMI_", "EC_", "SE_", "UWF_")
-
-
-def sonar_way(jar):
-    with zipfile.ZipFile(jar) as z:
-        keys = {m.group(1) for n in z.namelist() if (m := re.match(r"profiles/Sonar_way/(S\d+)/?$", n))}
-    return sorted(keys, key=lambda k: int(k[1:]))
 
 
 def findbugs(jar):
@@ -33,8 +29,8 @@ def findbugs(jar):
 
 
 def main():
-    java_jar, findbugs_jar, deep_keys = sys.argv[1:4]
-    rules = [("java", k) for k in sonar_way(java_jar)] + findbugs(findbugs_jar)
+    findbugs_jar, deep_keys = sys.argv[1:3]
+    rules = findbugs(findbugs_jar)
     rules += [("deepjava", k.strip()) for k in open(deep_keys) if k.strip()]
     out = ["<?xml version='1.0' encoding='UTF-8'?>", "<profile>", "  <name>Deep Java</name>", "  <language>java</language>", "  <rules>"]
     for repo, key in rules:

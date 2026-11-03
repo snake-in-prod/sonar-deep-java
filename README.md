@@ -82,11 +82,12 @@ All rules except those marked * are added to the built-in "Sonar way" Java profi
 
 ### "Deep Java" profile
 
-[`docs/deep-java-profile.xml`](docs/deep-java-profile.xml) is the profile of the spec: Sonar way, the
-[sonar-findbugs](https://github.com/spotbugs/sonar-findbugs) families `NP_*`, `OS_*`, `ODR_*`, `OBL_*`, `RV_*`,
-`DMI_*`, `EC_*`, `SE_*`, `UWF_*`, `IS2_INCONSISTENT_SYNC`, all of fb-contrib and Find Security Bugs, and the Deep
-Java rules. Restore it in SonarQube under *Quality Profiles > Restore*; rules of plugins that are not installed
-are skipped. `tools/generate_profile.py` regenerates it from the plugin jars.
+The profile of the spec is Sonar way + the [sonar-findbugs](https://github.com/spotbugs/sonar-findbugs)
+families `NP_*`, `OS_*`, `ODR_*`, `OBL_*`, `RV_*`, `DMI_*`, `EC_*`, `SE_*`, `UWF_*`, `IS2_INCONSISTENT_SYNC`,
+all of fb-contrib and Find Security Bugs + the Deep Java rules. [`docs/deep-java-profile.xml`](docs/deep-java-profile.xml)
+holds everything beyond Sonar way: restore it (*Quality Profiles > Restore*) and set "Sonar way" as its parent,
+so it follows Sonar way when the Java plugin is upgraded. Rules of plugins that are not installed are skipped.
+Step-by-step commands: [docs/adr/0001-installation-and-profile.md](docs/adr/0001-installation-and-profile.md).
 
 ## Install
 
@@ -96,6 +97,10 @@ run on Java 21 or later (SonarQube provisions it by default).
 1. Download `sonar-deep-java-<version>.jar` from [Releases](https://github.com/snake-in-prod/sonar-deep-java/releases).
 2. Copy it to `extensions/plugins/` of your SonarQube server and restart.
 3. Analyse with compiled classes available (`sonar.java.binaries`). Maven and Gradle scanners set this.
+4. Optional: create the "Deep Java" profile (above).
+
+Full procedure with verification and rollback, written to be followed by a person or an agent:
+[docs/adr/0001-installation-and-profile.md](docs/adr/0001-installation-and-profile.md).
 
 ## Settings
 
