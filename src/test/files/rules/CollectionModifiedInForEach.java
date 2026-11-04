@@ -21,6 +21,10 @@ class Iter {
     for (java.util.Map.Entry<String, String> e : m.entrySet()) {
       m.put(e.getKey(), e.getValue().trim());
     }
+    for (java.util.Map.Entry<String, String> e : m.entrySet()) {
+      String key = e.getKey();
+      m.put(key, e.getValue().trim());
+    }
   }
 
   void viaLambda(List<String> names) {

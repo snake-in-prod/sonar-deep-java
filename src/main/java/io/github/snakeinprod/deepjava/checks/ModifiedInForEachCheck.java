@@ -67,6 +67,11 @@ public class ModifiedInForEachCheck extends DeepCheck {
     }
     ExpressionTree key = Trees.skip(put.arguments().get(0));
     org.sonar.plugins.java.api.semantic.Symbol var = loop.variable().symbol();
+    org.sonar.plugins.java.api.semantic.Symbol k = Trees.symbol(key);
+    if (Trees.isLocal(k) && k.declaration() instanceof org.sonar.plugins.java.api.tree.VariableTree v && v.initializer() != null) {
+      // String topic = entry.getKey(); map.put(topic, ...)
+      key = Trees.skip(v.initializer());
+    }
     if (var.equals(Trees.symbol(key))) {
       return true;
     }

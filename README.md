@@ -192,15 +192,15 @@ Share of test cases with an issue in a `bad` method (true positives) and in a `g
 | 113 HTTP response splitting | `TaintedHeader` | 1332 | 73% | 3% |
 | 601 Open redirect | `TaintedRedirect` | 333 | 77% | 3% |
 | 134 Format string | `TaintedFormatString` | 666 | 28% | 0% |
-| 606 Unchecked loop condition | `TaintedSize` | 444 | 42% | 0% |
-| 129 Array index | `TaintedSize` | 2664 | 27% | 7% |
-| 400 / 789 Resource exhaustion, allocation | `TaintedSize` | 3031 | 24% | 0% |
-| 476 NULL dereference | null rules | 198 | 11% | 2% |
+| 606 Unchecked loop condition | `TaintedSize` | 444 | 56% | 0% |
+| 129 Array index | `TaintedSize` | 2664 | 36% | 9% |
+| 400 / 789 Resource exhaustion, allocation | `TaintedSize` | 3031 | 32% | 0% |
+| 476 NULL dereference | null rules | 198 | 6% | 2% |
 | 690 NULL dereference from return | `NullReturnDereference` | 296 | 5% | 3% |
 
 Injection rules miss the Juliet variants whose source is `System.getProperty`, a properties file or a database
-read, which the default models leave out to keep real projects quiet. Format string and size rules only count
-remote sources (requests, sockets, messages). Most Juliet null, resource, deadlock and unchecked-return cases
+read, which the default models leave out to keep real projects quiet. Format string rules only count remote
+sources (requests, sockets, messages); size rules also count integers read from binary or text input. Most Juliet null, resource, deadlock and unchecked-return cases
 are within one method, where sonar-java's own rules (`S2259`, `S2095`, `S2222`, ...) apply; Deep Java targets
 the cases that cross methods.
 
@@ -214,7 +214,7 @@ Every issue was reviewed by hand.
 | commons-lang3 3.21.0 | 439 | 1 |
 | commons-io 2.22.0 | 428 | 4 |
 | jackson-databind 2.22.4 | 813 | 2 |
-| kafka-clients 4.4.0 | 4345 | 15 |
+| kafka-clients 4.4.0 | 4345 | 21 |
 
 By rule (default profile):
 
@@ -222,10 +222,12 @@ By rule (default profile):
 |---|--:|--:|--:|--:|
 | `InconsistentLocking` | 13 | 5 | 0 | 8 |
 | `NullReturnDereference` | 5 | 1 | 4 | 0 |
-| `NullPassedToDereferencedParameter` | 1 | 1 | 0 | 0 |
+| `DivisionByPossibleZero` | 3 | 0 | 0 | 3 |
+| `TaintedSize` | 3 | 0 | 0 | 3 |
 | `NegativeIndexFromSearch` | 2 | 0 | 2 | 0 |
+| `NullPassedToDereferencedParameter` | 1 | 1 | 0 | 0 |
 | `SecretLeak` | 1 | 0 | 1 | 0 |
-| other 42 rules | 0 | | | |
+| other 45 rules | 0 | | | |
 
 - True positives: fields read or written without the lock that guards them everywhere else (in commons-io a
   `long` read without the lock is not even atomic), `null` passed to a Jackson method that dereferences that
@@ -233,10 +235,12 @@ By rule (default profile):
 - False positives: `Map.get(CONSTANT)` on Kafka configuration maps that Kafka fills with defaults,
   `lastIndexOf`/`indexOf` results whose presence was established just before, a blank client secret put into an
   exception message.
-- Not confirmed: Kafka coordinator and batch fields that Kafka documents as accessed from one thread.
+- Not confirmed: Kafka coordinator and batch fields that Kafka documents as accessed from one thread; divisions by
+  partition and consumer counts that Kafka's callers keep above 0; loop bounds and list sizes read from protocol
+  buffers (the pattern of ADR 0002 F: an attacker-sized count, bounded only by the buffer).
 
 The rules outside the default profile reported 9 issues on the same libraries, none of them a defect.
-Before the precision work described above, the same run reported 840 issues.
+Before the precision work, the first run of 0.1 reported 840 issues.
 
 ## Known limits
 
