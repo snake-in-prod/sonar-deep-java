@@ -22,4 +22,31 @@ class Limits {
   void pause(Map<String, String> cfg) throws InterruptedException {
     Thread.sleep(Long.parseLong(cfg.get("ms"))); // Noncompliant
   }
+
+  boolean range(Map<String, String> cfg) {
+    int lo = Integer.parseInt(cfg.get("lo"));
+    int hi = Integer.parseInt(cfg.get("hi"));
+    if (hi < lo) { // Noncompliant
+      return false;
+    }
+    return true;
+  }
+
+  boolean negative(Map<String, String> cfg) {
+    int n = Integer.parseInt(cfg.get("n"));
+    if (n < 0) { // Noncompliant
+      return false;
+    }
+    return true;
+  }
+
+  void purge(long period) {
+    for (long t = 0; t < period; t++) {
+      System.out.println(t);
+    }
+  }
+
+  void retention(Map<String, String> cfg) {
+    purge(Long.parseLong(cfg.get("period"))); // Noncompliant
+  }
 }

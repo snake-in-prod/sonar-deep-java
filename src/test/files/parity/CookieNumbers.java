@@ -10,3 +10,14 @@ class Login {
     response.addCookie(new Cookie("login", "" + loginTime)); // Noncompliant
   }
 }
+
+class Tokens {
+  void setCookie(HttpServletResponse response, String value) {
+    response.addCookie(new Cookie("t", value)); // Noncompliant
+  }
+
+  void login(HttpServletRequest request, HttpServletResponse response) {
+    long loginTime = Long.parseLong(request.getParameter("t"));
+    setCookie(response, String.valueOf(loginTime)); // Noncompliant
+  }
+}

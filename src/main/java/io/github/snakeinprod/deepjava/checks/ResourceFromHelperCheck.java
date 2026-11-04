@@ -33,9 +33,18 @@ public class ResourceFromHelperCheck extends DeepCheck {
     if (tree instanceof org.sonar.plugins.java.api.tree.NewClassTree nc) {
       // new GZIPInputStream(in) ... gz.close() outside finally: lost (with "in") when a call in between throws
       org.sonar.plugins.java.api.semantic.Type t = nc.symbolType();
-      if (ROOTS.stream().anyMatch(r -> t.isSubtypeOf(r.replace('/', '.').replace('$', '.'))) && isRealResource(t.fullyQualifiedName())
-        && nc.parent() instanceof VariableTree v && Trees.isLocal(v.symbol()) && !v.parent().is(Tree.Kind.LIST)) {
-        lostOnException(v, "\"new " + t.name() + "()\" creates a \"" + t.name() + "\"");
+      if (!isResource(t)) {
+        return;
+      }
+      if (nc.parent() instanceof VariableTree v && Trees.isLocal(v.symbol()) && !v.parent().is(Tree.Kind.LIST)) {
+        if (neverReleased(v.symbol())) {
+          // parity: never closed at all (Sonar's own resource rule reports it too)
+          if (summaries.get().options().referenceParity()) {
+            reportIssue(v.simpleName(), "\"new " + t.name() + "()\" creates a \"" + t.name() + "\" that is never closed here.");
+          }
+        } else {
+          lostOnException(v, "\"new " + t.name() + "()\" creates a \"" + t.name() + "\"");
+        }
       }
       return;
     }
@@ -80,6 +89,10 @@ public class ResourceFromHelperCheck extends DeepCheck {
         lostOnException(v, "\"" + targets.get(0).display() + "\" returns a new \"" + type + "\"");
       }
     }
+  }
+
+  private static boolean isResource(org.sonar.plugins.java.api.semantic.Type t) {
+    return ROOTS.stream().anyMatch(r -> t.isSubtypeOf(r.replace('/', '.').replace('$', '.'))) && isRealResource(t.fullyQualifiedName());
   }
 
   static boolean fresh(Summaries s, Summaries.Method t, int depth) {

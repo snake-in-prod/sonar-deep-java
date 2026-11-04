@@ -114,8 +114,44 @@ public final class FindingChecks {
   public static final class CodeAfterThrow extends FindingCheck {
     public static final String KEY = "CodeAfterAlwaysThrows";
 
+    private final Supplier<Summaries> summaries;
+
     public CodeAfterThrow(Supplier<Summaries> s) {
       super(s);
+      this.summaries = s;
+    }
+
+    @Override
+    public List<org.sonar.plugins.java.api.tree.Tree.Kind> nodesToVisit() {
+      return List.of(org.sonar.plugins.java.api.tree.Tree.Kind.COMPILATION_UNIT, org.sonar.plugins.java.api.tree.Tree.Kind.TRY_STATEMENT);
+    }
+
+    /** {@code try (X x = alwaysThrows()) { ... } next();}: the body and what follows the try never run. */
+    @Override
+    public void visitNode(org.sonar.plugins.java.api.tree.Tree tree) {
+      if (!(tree instanceof org.sonar.plugins.java.api.tree.TryStatementTree t)) {
+        super.visitNode(tree);
+        return;
+      }
+      for (org.sonar.plugins.java.api.tree.Tree r : t.resourceList()) {
+        org.sonar.plugins.java.api.tree.ExpressionTree init = r instanceof org.sonar.plugins.java.api.tree.VariableTree v ? v.initializer() : null;
+        if (init != null && Trees.skip(init) instanceof org.sonar.plugins.java.api.tree.MethodInvocationTree call && !call.methodSymbol().isUnknown()) {
+          String key = Trees.callKey(call.methodSymbol());
+          if (key != null && summaries.get().neverReturns(key) && t.catches().isEmpty()) {
+            String what = "\"" + Trees.name(call) + "()\" always throws, so this code never runs.";
+            if (!t.block().body().isEmpty()) {
+              reportIssue(t.block().body().get(0), what);
+            }
+            if (t.parent() instanceof org.sonar.plugins.java.api.tree.BlockTree b) {
+              List<org.sonar.plugins.java.api.tree.StatementTree> after = Trees.statementsAfter(b, t);
+              if (!after.isEmpty()) {
+                reportIssue(after.get(0), what);
+              }
+            }
+            return;
+          }
+        }
+      }
     }
   }
 

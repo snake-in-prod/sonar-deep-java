@@ -166,7 +166,8 @@ public class NullAssignedThenDereferencedCheck extends DeepCheck {
           return true;
         }
       }
-      if (assigned.get(j).contains(var)) {
+      // parity: an assignment on some branches only leaves the null of the other paths
+      if (assigned.get(j).contains(var) && (!summaries.get().options().referenceParity() || assignsOnEveryPath(later, var))) {
         return true;
       }
     }

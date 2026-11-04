@@ -38,4 +38,16 @@ class Flags {
       System.out.println(attempt);
     }
   }
+
+  private static int maxRetries = 0;
+
+  boolean inRange(char c) {
+    return '\u0000' <= c; // Noncompliant
+  }
+
+  void retries() {
+    for (int i = 1; i <= maxRetries; i++) { // Noncompliant
+      System.out.println(i);
+    }
+  }
 }

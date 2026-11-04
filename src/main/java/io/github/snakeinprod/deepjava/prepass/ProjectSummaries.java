@@ -44,13 +44,14 @@ import org.sonar.api.config.Configuration;
 public class ProjectSummaries implements Supplier<Summaries> {
 
   private static final Logger LOG = LoggerFactory.getLogger(ProjectSummaries.class);
-  private static final int CACHE_FORMAT = 11;
+  private static final int CACHE_FORMAT = 12;
   private static final Set<String> SKIP_DIRS = Set.of(".git", "node_modules", "src", ".scannerwork", ".gradle", ".idea");
 
   private final Configuration config;
   private final Path baseDir;
   private final Set<Path> binaries = new LinkedHashSet<>();
   private final Set<Path> libraries = new LinkedHashSet<>();
+  private final Set<Path> testBinaries = new LinkedHashSet<>();
   private final Map<String, ClassFacts> scanned = new HashMap<>();
   private boolean discovered;
   private boolean stale = true;
@@ -66,6 +67,7 @@ public class ProjectSummaries implements Supplier<Summaries> {
     try {
       boolean changed = binaries.addAll(resolve(moduleBaseDir, moduleConfig.getStringArray("sonar.java.binaries")));
       changed |= libraries.addAll(resolve(moduleBaseDir, moduleConfig.getStringArray("sonar.java.libraries")));
+      changed |= testBinaries.addAll(resolve(moduleBaseDir, moduleConfig.getStringArray("sonar.java.test.binaries")));
       stale |= changed;
     } catch (IOException e) {
       throw new UncheckedIOException(e);
@@ -118,10 +120,26 @@ public class ProjectSummaries implements Supplier<Summaries> {
       used.put(key, f);
       byName.putIfAbsent(f.name(), f);
     });
+    boolean parity = config.getBoolean(DeepJavaPlugin.REFERENCE_PARITY).orElse(false);
+    List<ClassFacts> tests = new ArrayList<>();
+    if (parity) {
+      // parity: callers in test code count for the call-site statistics too
+      Set<Path> testDirs = new LinkedHashSet<>(testBinaries);
+      testDirs.addAll(discoverTestDirs(baseDir));
+      forEachClass(testDirs, bytes -> {
+        String key = sha256(bytes) + ":" + version;
+        ClassFacts f = cache.get(key);
+        f = f != null ? f : BytecodeScanner.scan(bytes, maxSteps, taintModels);
+        used.put(key, f);
+        if (!byName.containsKey(f.name())) {
+          tests.add(f);
+        }
+      });
+    }
     scanned.putAll(used);
     writeCache(cacheFile, used);
 
-    Summaries s = new Summaries(byName.values(), new Hierarchy(byName, List.copyOf(libraries)), LibraryModels.load(models), thresholds,
+    Summaries s = new Summaries(byName.values(), tests, new Hierarchy(byName, List.copyOf(libraries)), LibraryModels.load(models), thresholds,
       new Summaries.Options(new Summaries.Nullable(config.getStringArray(DeepJavaPlugin.NULLABLE_ANNOTATIONS).length == 0
         ? Summaries.Nullable.DEFAULT.annotations() : Set.of(config.getStringArray(DeepJavaPlugin.NULLABLE_ANNOTATIONS)),
         Set.of(config.getStringArray(DeepJavaPlugin.NULLABLE_IGNORED))),
@@ -145,6 +163,18 @@ public class ProjectSummaries implements Supplier<Summaries> {
       libraries.addAll(resolve(moduleBase, config.getStringArray(p + "sonar.java.libraries")));
       declaredModules(moduleBase, p);
     }
+  }
+
+  /** {@code target/test-classes} and {@code build/classes/<lang>/test} directories below {@code root}. */
+  static List<Path> discoverTestDirs(Path root) throws IOException {
+    List<Path> out = new ArrayList<>();
+    try (Stream<Path> s = Files.walk(root)) {
+      s.filter(Files::isDirectory).filter(d -> {
+        String p = d.toString().replace('\\', '/');
+        return (p.endsWith("/target/test-classes") || p.matches(".*/build/classes/[^/]+/test")) && !p.contains("/src/");
+      }).forEach(d -> out.add(d.toAbsolutePath().normalize()));
+    }
+    return out;
   }
 
   /** {@code target/classes} and {@code build/classes/<lang>/main} directories anywhere below {@code root}. */

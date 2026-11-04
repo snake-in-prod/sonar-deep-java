@@ -26,4 +26,18 @@ class Merger {
       return s.trim().replaceAll("_+", "").toLowerCase();
     }
   }
+
+  String kind(String s) {
+    if (s.matches("[0-9]+")) {
+      return s.trim().replaceAll("^0+", "").toLowerCase();
+    } else if (s.length() > 3) { // Noncompliant
+      return s.trim().replaceAll("^x+", "").toLowerCase();
+    }
+    return s;
+  }
+
+  void counts(java.util.Map<String, Integer> stats, int complianceCount, int nonComplianceCount) {
+    stats.put("compliance", complianceCount);
+    stats.put("nonCompliance", complianceCount); // Noncompliant
+  }
 }

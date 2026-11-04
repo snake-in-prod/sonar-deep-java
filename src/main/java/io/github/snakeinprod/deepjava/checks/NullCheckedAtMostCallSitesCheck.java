@@ -20,6 +20,8 @@ public class NullCheckedAtMostCallSitesCheck extends DeepCheck {
 
   /** Plain getters are checked out of habit more often: they need a stronger majority. */
   private static final double GETTER_RATIO = 0.9;
+  private static final double PARITY_RATIO = 0.5;
+  private static final int PARITY_MIN_SITES = 3;
 
   public NullCheckedAtMostCallSitesCheck(Supplier<Summaries> summaries) {
     super(summaries);
@@ -39,20 +41,23 @@ public class NullCheckedAtMostCallSitesCheck extends DeepCheck {
       return;
     }
     Tree site = null;
+    boolean parity = s.options().referenceParity();
     Tree parent = NullReturnDereferenceCheck.skipParentheses(mit);
-    if (NullReturnDereferenceCheck.isDereferenceOf(parent, mit)) {
-      site = mit;
+    // a Lombok getter has no type in the syntax tree: its descriptor says whether it returns a wrapper (unboxing)
+    boolean boxed = Derefs.isBoxed(mit.symbolType()) || key.matches(".*\\)Ljava/lang/(Long|Integer|Short|Byte|Boolean|Double|Float|Character);");
+    if (Derefs.isDereference(parent, mit, boxed)) {
+      site = Trees.methodName(mit);
     } else if (parent instanceof VariableTree v && Trees.isLocal(v.symbol())) {
-      IdentifierTree use = NullReturnDereferenceCheck.firstUseIfDereference(v.symbol());
-      site = use;
+      site = NullReturnDereferenceCheck.firstUseIfDereference(v.symbol(), parity);
     }
     if (site == null) {
       return;
     }
     Summaries.CallStats stats = s.callStats(key);
-    double ratio = !s.options().referenceParity() && isPlainGetter(s, key) ? Math.max(GETTER_RATIO, s.thresholds().minRatio())
-      : s.thresholds().minRatio();
-    if (stats.sites() < s.thresholds().minSites() || stats.checked() < ratio * stats.sites() || stats.checked() >= stats.sites()) {
+    // parity: the reference analyzer reports at lower ratios; getters get no stricter cut-off
+    double ratio = parity ? PARITY_RATIO : isPlainGetter(s, key) ? Math.max(GETTER_RATIO, s.thresholds().minRatio()) : s.thresholds().minRatio();
+    int minSites = parity ? Math.min(PARITY_MIN_SITES, s.thresholds().minSites()) : s.thresholds().minSites();
+    if (stats.sites() < minSites || stats.checked() < ratio * stats.sites() || stats.checked() >= stats.sites()) {
       return;
     }
     // NullReturnDereference already reports the calls whose null it can explain

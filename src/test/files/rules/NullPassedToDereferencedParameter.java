@@ -73,3 +73,39 @@ class Responder {
   }
 }
 
+
+
+
+class Responses2 {
+  @javax.annotation.Nullable
+  String getXml() {
+    return System.nanoTime() > 0 ? "<a/>" : null;
+  }
+
+  int parse(String xml) {
+    return xml.length();
+  }
+
+  void use() throws Exception {
+    parse(getXml()); // Noncompliant
+    String body = getXml();
+    new java.io.StringReader(body); // Noncompliant
+    org.json.XML.toJSONObject(getXml()); // Noncompliant
+    new java.util.HashSet<>(names()); // Noncompliant
+    javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new java.io.ByteArrayInputStream(new byte[0]));
+  }
+
+  @javax.annotation.Nullable
+  java.util.List<String> names() {
+    return null;
+  }
+
+  void tenth(String a, String b, String c, String d, String e, String f, String g, String h, String i, String j) {
+    System.out.println(a + b + c + d + e + f + g + h + i + j.trim());
+  }
+
+  void callTenth() {
+    String last = null;
+    tenth("a", "b", "c", "d", "e", "f", "g", "h", "i", last); // Noncompliant
+  }
+}

@@ -339,7 +339,9 @@ public final class BytecodeScanner implements Opcodes {
           return constant(1, "I:" + (op - ICONST_0), -1);
         case BIPUSH, SIPUSH:
           return constant(1, "I:" + ((IntInsnNode) insn).operand, -1);
-        case LCONST_0, LCONST_1, DCONST_0, DCONST_1:
+        case LCONST_0:
+          return new V(2, false, Set.of(), -1, "J:0");
+        case LCONST_1, DCONST_0, DCONST_1:
           return V.U2;
         case LDC:
           Object c = ((LdcInsnNode) insn).cst;
@@ -369,7 +371,7 @@ public final class BytecodeScanner implements Opcodes {
 
     @Override
     public V copyOperation(AbstractInsnNode insn, V v) {
-      if (insn.getOpcode() == ALOAD || insn.getOpcode() == ILOAD) {
+      if (insn.getOpcode() == ALOAD || insn.getOpcode() == ILOAD || insn.getOpcode() == LLOAD) {
         return v.withLocal(((VarInsnNode) insn).var);
       }
       if (insn.getOpcode() == ASTORE && v.isNullConstant() && "null".equals(v.origin())) {
@@ -714,7 +716,8 @@ public final class BytecodeScanner implements Opcodes {
       }
       Map<Integer, Set<String>> forwardShifted = new HashMap<>();
       forwards.forEach((p, targets) -> {
-        if (refParams.contains(p) && !nullCompared.contains(p) && !reassigned.contains(p)) {
+        // references not compared to null (for dereferences), ints not compared at all (for indexes)
+        if (!reassigned.contains(p) && (refParams.contains(p) ? !nullCompared.contains(p) : !compared.contains(p))) {
           forwardShifted.put(paramIndex(p), Set.copyOf(targets));
         }
       });
@@ -749,11 +752,12 @@ public final class BytecodeScanner implements Opcodes {
       LockFacts lockFacts = new LockFacts(List.copyOf(accesses), List.copyOf(edges), List.copyOf(lockedCalls), Map.copyOf(acquired),
         Set.copyOf(heldAtReturn), Map.copyOf(reacquired));
       calls.addAll(lambdaRefs);
-      ExFacts ex = new ExFacts(List.copyOf(calls), List.copyOf(throwSites), tries());
+      ExFacts ex = new ExFacts(List.copyOf(calls), List.copyOf(throwSites), tries(), Map.copyOf(returnsAfter));
       return new MethodFacts(info, nulls, uses, lockFacts, ex, ClassFacts.TaintFacts.EMPTY);
     }
 
     private final List<ThrowSite> throwSites = new ArrayList<>();
+    private final Map<Integer, Set<String>> returnsAfter = new HashMap<>();
     private final Set<CallSite> lambdaRefs = new LinkedHashSet<>();
     private final Set<Integer> throwSeen = new HashSet<>();
 
@@ -1012,6 +1016,15 @@ public final class BytecodeScanner implements Opcodes {
       Frame<V> out = new Frame<>(f);
 
       if (op >= IRETURN && op <= RETURN) {
+        V before = f.getLocal(lastCall);
+        returnsAfter.merge(lines[i], before.nullLit() ? Set.of() : before.calls(), (a, b) -> {
+          if (a.isEmpty() || b.isEmpty()) {
+            return Set.of();
+          }
+          Set<String> u = new HashSet<>(a);
+          u.addAll(b);
+          return Set.copyOf(u);
+        });
         anyReturn |= op != RETURN;
         notDerefAtReturn.addAll(f.getLocal(notDeref).calls().stream().map(Integer::valueOf).toList());
         for (String l : held) {
@@ -1028,7 +1041,7 @@ public final class BytecodeScanner implements Opcodes {
           if ("I:-1".equals(top.origin())) {
             mayReturnMinusOne = true;
           }
-          if ("I:0".equals(top.origin()) && op == IRETURN) {
+          if ("I:0".equals(top.origin()) && op == IRETURN || "J:0".equals(top.origin()) && op == LRETURN) {
             mayReturnZero = true;
           }
         }

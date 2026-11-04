@@ -12,4 +12,16 @@ class Names {
     }
     return "";
   }
+
+  String twoBranches(boolean a, boolean b, String id) {
+    String s = null;
+    if (a) {
+      s = id;
+    }
+    if (b) {
+      s = id.trim();
+    }
+    System.out.println(id);
+    return s.concat("x"); // Noncompliant
+  }
 }

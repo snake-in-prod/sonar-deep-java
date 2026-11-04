@@ -75,3 +75,22 @@ class Pages {
     return total(count, 10);
   }
 }
+
+
+
+class Service {
+  long total(String s) {
+    if (s.isEmpty()) {
+      return 0L;
+    }
+    return s.length();
+  }
+
+  static long share(long amount, long parts) {
+    return amount / parts;
+  }
+
+  long split(String s) {
+    return share(100, total(s)); // Noncompliant
+  }
+}

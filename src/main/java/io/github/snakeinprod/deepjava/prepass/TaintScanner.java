@@ -137,6 +137,18 @@ public final class TaintScanner implements Opcodes {
         }
         lines[i] = line;
       }
+      // long and stepped counters: xLOAD k; constant; xADD/xSUB; xSTORE k
+      for (int i = 0; i < n; i++) {
+        if (insns.get(i) instanceof VarInsnNode st && (st.getOpcode() == ISTORE || st.getOpcode() == LSTORE)) {
+          AbstractInsnNode op = realBefore(insns.get(i));
+          AbstractInsnNode c = op == null ? null : realBefore(op);
+          AbstractInsnNode ld = c == null ? null : realBefore(c);
+          if (op != null && Set.of(IADD, ISUB, LADD, LSUB).contains(op.getOpcode()) && c != null
+            && (c.getOpcode() >= ICONST_M1 && c.getOpcode() <= LDC) && ld instanceof VarInsnNode l && l.var == st.var) {
+            counters.add(st.var);
+          }
+        }
+      }
       for (TryCatchBlockNode tcb : m.tryCatchBlocks) {
         for (int i = insns.indexOf(tcb.start); i < insns.indexOf(tcb.end); i++) {
           if (handlers[i] == null) {
@@ -145,6 +157,14 @@ public final class TaintScanner implements Opcodes {
           handlers[i].add(tcb);
         }
       }
+    }
+
+    private static AbstractInsnNode realBefore(AbstractInsnNode insn) {
+      AbstractInsnNode p = insn.getPrevious();
+      while (p != null && p.getOpcode() < 0) {
+        p = p.getPrevious();
+      }
+      return p;
     }
 
     private String source(String kind, String what) {
@@ -566,7 +586,15 @@ public final class TaintScanner implements Opcodes {
         if ("java/lang/String".equals(mi.owner) && "length".equals(mi.name) && receiver != null) {
           // the length of a line read from input is as untrusted as the line; of user text it is bounded by the request
           Set<String> data = new HashSet<>();
-          receiver.labels().stream().filter(l -> l.startsWith("SDATA|")).forEach(l -> data.add(l.endsWith("#") ? l : l + "#"));
+          for (String l : receiver.labels()) {
+            String b = l.endsWith("#") ? l.substring(0, l.length() - 1) : l;
+            if (b.startsWith("SDATA|")) {
+              data.add(b + "#");
+            } else if (b.startsWith("S") && b.indexOf('|') > 0 && !b.startsWith("SSECRET|")) {
+              // the length of other untrusted text: a size only in parity mode
+              data.add("SLEN" + b.substring(b.indexOf('|')) + "#");
+            }
+          }
           return new TV(1, Set.copyOf(data), -1, null);
         }
         if (models.isSanitizer(mi.owner, mi.name) || isCrlfStrip(mi, values)) {
@@ -733,6 +761,21 @@ public final class TaintScanner implements Opcodes {
           boolean relational = op != IF_ICMPEQ && op != IF_ICMPNE;
           next = bound(out, a, b, relational);
           next = bound(next, b, a, relational);
+        } else if (op >= IFEQ && op <= IFLE) {
+          AbstractInsnNode prev = realBefore(insn);
+          int pi = prev == null ? -1 : insns.indexOf(prev);
+          boolean relational = op != IFEQ && op != IFNE;
+          if (prev != null && Set.of(LCMP, FCMPL, FCMPG, DCMPL, DCMPG).contains(prev.getOpcode()) && frames[pi] != null) {
+            // long n; if (i < n): the comparison happened at the LCMP
+            Frame<TV> at = frames[pi];
+            TV a = at.getStack(at.getStackSize() - 2);
+            TV b = at.getStack(at.getStackSize() - 1);
+            next = bound(out, a, b, relational);
+            next = bound(next, b, a, relational);
+          } else if (relational && !f.getStack(sp - 1).labels().isEmpty()) {
+            // if (n < 0): a check against zero
+            sink("SIZECMP", f.getStack(sp - 1).labels(), "comparison");
+          }
         }
         Boolean taken = constantJump(op, f, sp);
         if (taken == null || taken) {
@@ -809,7 +852,7 @@ public final class TaintScanner implements Opcodes {
         return f;
       }
       Integer c = intConst(other);
-      if (relational && c != null) {
+      if (relational && (c != null || !other.labels().isEmpty())) {
         // value > 255: a bound check on untrusted input (parity mode reports it as a size use)
         sink("SIZECMP", x.labels(), "comparison");
       }

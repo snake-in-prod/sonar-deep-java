@@ -146,8 +146,13 @@ public record ClassFacts(String name, String superName, List<String> interfaces,
   public record TryFacts(String handlerType, int line, Set<String> callKeys, boolean hasLambda) implements Serializable {
   }
 
-  public record ExFacts(List<CallSite> calls, List<ThrowSite> throwsNew, List<TryFacts> tries) implements Serializable {
-    static final ExFacts EMPTY = new ExFacts(List.of(), List.of(), List.of());
+  /**
+   * @param returnsAfter line of each return instruction to the calls made last before it on some path (empty: a
+   *                     path with no call); the method never returns when every such call never returns
+   */
+  public record ExFacts(List<CallSite> calls, List<ThrowSite> throwsNew, List<TryFacts> tries, Map<Integer, Set<String>> returnsAfter)
+    implements Serializable {
+    static final ExFacts EMPTY = new ExFacts(List.of(), List.of(), List.of(), Map.of());
   }
 
   /**

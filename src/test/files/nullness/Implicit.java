@@ -99,6 +99,11 @@ class Holder {
     annotations.forEach(System.out::println); // Noncompliant
   }
 
+  void inLambda() {
+    Runnable r = () -> annotations.forEach(System.out::println); // Noncompliant
+    r.run();
+  }
+
   void guarded() {
     if (annotations != null) {
       annotations.forEach(System.out::println);

@@ -54,11 +54,13 @@ public class CopyPasteCheck extends DeepCheck {
         }
       }
     }
-    if (ifs.elseStatement() == null || ifs.elseStatement().is(Tree.Kind.IF_STATEMENT)) {
+    if (ifs.elseStatement() == null) {
       return;
     }
+    // if / else, or if / else if: compare the two bodies
+    Tree other = ifs.elseStatement() instanceof org.sonar.plugins.java.api.tree.IfStatementTree elseIf ? elseIf.thenStatement() : ifs.elseStatement();
     String a = text(ifs.thenStatement());
-    String b = text(ifs.elseStatement());
+    String b = text(other);
     if (a == null || b == null || a.equals(b) || a.length() < 20) {
       return;
     }
@@ -106,8 +108,68 @@ public class CopyPasteCheck extends DeepCheck {
   private record Copy(ExpressionTree value, String prop, Symbol source, String srcProp, Symbol target) {
   }
 
+  /**
+   * Parity mode: two neighbouring statements with the same tokens, where the second renamed a value in one place but
+   * not in a related one ({@code if (nonAnchorType != null) add(anchorType)} after {@code if (anchorType != null) add(anchorType)}).
+   */
+  private void renamedPairs(BlockTree block) {
+    List<StatementTree> body = block.body();
+    for (int i = 1; i < body.size(); i++) {
+      List<String> a = tokens(text(body.get(i - 1)));
+      List<String> b = tokens(text(body.get(i)));
+      if (a.size() != b.size() || a.size() < 4) {
+        continue;
+      }
+      List<Integer> diff = new ArrayList<>();
+      for (int k = 0; k < a.size(); k++) {
+        if (!a.get(k).equals(b.get(k))) {
+          diff.add(k);
+        }
+      }
+      if (diff.isEmpty() || diff.size() > 3) {
+        continue;
+      }
+      for (int d : diff) {
+        String from = stem(a.get(d));
+        String to = stem(b.get(d));
+        if (from.length() < 3 || !to.toLowerCase().contains(from.toLowerCase()) || to.equalsIgnoreCase(from)) {
+          continue;
+        }
+        for (int k = 0; k < a.size(); k++) {
+          if (!diff.contains(k) && isName(a.get(k)) && a.get(k).toLowerCase().contains(from.toLowerCase())) {
+            reportIssue(body.get(i), "This line renames \"" + a.get(d) + "\" to \"" + b.get(d) + "\" but still uses \"" + a.get(k)
+              + "\": is it a copy of the line above that was not fully edited?");
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  private static final java.util.regex.Pattern TOKEN = java.util.regex.Pattern.compile("\"(?:\\\\.|[^\"\\\\])*\"|[A-Za-z_$][A-Za-z0-9_$]*|\\d+|\\S");
+
+  private static List<String> tokens(String text) {
+    List<String> out = new ArrayList<>();
+    java.util.regex.Matcher m = TOKEN.matcher(text);
+    while (m.find()) {
+      out.add(m.group());
+    }
+    return out;
+  }
+
+  private static boolean isName(String t) {
+    return Character.isJavaIdentifierStart(t.charAt(0));
+  }
+
+  private static String stem(String t) {
+    return t.startsWith("\"") ? t.substring(1, Math.max(1, t.length() - 1)) : t;
+  }
+
   @Override
   public void visitNode(Tree tree) {
+    if (tree instanceof BlockTree block && summaries.get().options().referenceParity()) {
+      renamedPairs(block);
+    }
     if (tree instanceof org.sonar.plugins.java.api.tree.IfStatementTree ifs) {
       if (summaries.get().options().referenceParity()) {
         branches(ifs);

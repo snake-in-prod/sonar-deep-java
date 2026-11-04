@@ -63,3 +63,19 @@ class Registry {
 
 class CacheMap<K, V> extends java.util.HashMap<K, V> {
 }
+
+
+
+class Holder2 {
+  private final java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+
+  java.util.Map<String, Integer> getCounts() {
+    return counts;
+  }
+
+  void prune() {
+    for (String k : getCounts().keySet()) {
+      getCounts().remove(k); // Noncompliant
+    }
+  }
+}

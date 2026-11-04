@@ -179,6 +179,18 @@ public final class Summaries {
   }
 
   public Summaries(Collection<ClassFacts> facts, Hierarchy hierarchy, LibraryModels models, Thresholds thresholds, Options options) {
+    this(facts, List.of(), hierarchy, models, thresholds, options);
+  }
+
+  /** @param statsOnly classes (test code) whose calls count for call-site statistics only */
+  public Summaries(Collection<ClassFacts> facts, Collection<ClassFacts> statsOnly, Hierarchy hierarchy, LibraryModels models,
+    Thresholds thresholds, Options options) {
+    for (ClassFacts c : statsOnly) {
+      for (MethodFacts m : c.methods().values()) {
+        m.uses().callSites().forEach((k, n) -> callSites.merge(k, n, Integer::sum));
+        m.uses().nullChecks().forEach((k, n) -> nullChecks.merge(k, n, Integer::sum));
+      }
+    }
     this.options = options;
     this.nullable = options.nullable();
     this.classes = byName(facts);
@@ -343,11 +355,66 @@ public final class Summaries {
     return targets;
   }
 
-  /** Every project implementation of the call always throws ({@code reportError(...); return null;}). */
+  /**
+   * Every project implementation of the call always throws: it has no return, or each of its returns comes right
+   * after a call that never returns ({@code addError(msg); fail(); return;}).
+   */
   public boolean neverReturns(String callKey) {
+    return neverReturns(callKey, 0);
+  }
+
+  private final Map<String, Boolean> never = new HashMap<>();
+
+  private synchronized boolean neverReturns(String callKey, int depth) {
+    Boolean known = never.get(callKey);
+    if (known != null) {
+      return known;
+    }
+    never.put(callKey, false);
     Call c = parse(callKey);
     List<ClassFacts> targets = targetClasses(c.owner(), c.nameDesc(), c.exact());
-    return !targets.isEmpty() && targets.stream().noneMatch(t -> t.methods().get(c.nameDesc()).nulls().returnsNormally());
+    boolean r = !targets.isEmpty() && targets.stream().allMatch(t -> {
+      MethodFacts m = t.methods().get(c.nameDesc());
+      if (!m.nulls().returnsNormally()) {
+        return true;
+      }
+      Map<Integer, Set<String>> returns = m.ex().returnsAfter();
+      return depth < 4 && !returns.isEmpty() && returns.values().stream()
+        .allMatch(calls -> !calls.isEmpty() && calls.stream().allMatch(k -> neverReturns(k, depth + 1)));
+    });
+    never.put(callKey, r);
+    return r;
+  }
+
+  private final Map<String, Boolean> indexes = new HashMap<>();
+
+  /** Parameter {@code index} is used as an index without a check, in {@code m} or a callee it is passed to. */
+  public synchronized boolean indexesParameter(Method m, int index) {
+    return indexesParameter(m, index, 0);
+  }
+
+  private boolean indexesParameter(Method m, int index, int depth) {
+    if (m.facts().uses().indexParams().contains(index)) {
+      return true;
+    }
+    String memoKey = m.owner().name() + "#" + m.nameDesc() + "#" + index;
+    Boolean known = indexes.get(memoKey);
+    if (known != null || depth >= 4) {
+      return known != null && known;
+    }
+    indexes.put(memoKey, false);
+    boolean r = false;
+    for (String fwd : m.facts().uses().paramForwards().getOrDefault(index, Set.of())) {
+      int bar = fwd.lastIndexOf('|');
+      List<Method> t = targets(fwd.substring(0, bar));
+      int arg = Integer.parseInt(fwd.substring(bar + 1));
+      if (!t.isEmpty() && t.size() <= thresholds.maxTargets() && t.stream().allMatch(x -> indexesParameter(x, arg, depth + 1))) {
+        r = true;
+        break;
+      }
+    }
+    indexes.put(memoKey, r);
+    return r;
   }
 
   /** The class declaring {@code nameDesc}, searching {@code owner} and its project superclasses. */
@@ -416,7 +483,8 @@ public final class Summaries {
    * project-rooted ones only when most call sites check the result.
    */
   public boolean isReportable(String callKey, NullReason reason) {
-    if (reason.isStrong()) {
+    // parity: a "return null" path is reason enough, as for the reference analyzer
+    if (reason.isStrong() || options.referenceParity()) {
       return true;
     }
     CallStats s = callStats(callKey);

@@ -28,7 +28,8 @@ public class ConstantConditionCheck extends DeepCheck {
   @Override
   public List<Tree.Kind> nodesToVisit() {
     return List.of(Tree.Kind.IF_STATEMENT, Tree.Kind.WHILE_STATEMENT, Tree.Kind.DO_STATEMENT, Tree.Kind.CONDITIONAL_EXPRESSION,
-      Tree.Kind.FOR_STATEMENT);
+      Tree.Kind.FOR_STATEMENT, Tree.Kind.LESS_THAN, Tree.Kind.LESS_THAN_OR_EQUAL_TO, Tree.Kind.GREATER_THAN,
+      Tree.Kind.GREATER_THAN_OR_EQUAL_TO);
   }
 
   /** {@code for (int i = 1; i <= RETRIES; i++)} with {@code RETRIES = 0}: the loop never runs. */
@@ -40,6 +41,11 @@ public class ConstantConditionCheck extends DeepCheck {
     }
     Integer start = v.initializer().asConstant(Integer.class).orElse(null);
     Integer bound = c.rightOperand().asConstant(Integer.class).orElse(null);
+    if (bound == null) {
+      // a field only ever set to one constant, or a method that always returns one
+      Constant k = constant(c.rightOperand());
+      bound = k != null && k.value().startsWith("I:") ? Integer.valueOf(k.value().substring(2)) : null;
+    }
     if (start == null || bound == null) {
       return;
     }
@@ -59,6 +65,16 @@ public class ConstantConditionCheck extends DeepCheck {
   public void visitNode(Tree tree) {
     if (tree instanceof org.sonar.plugins.java.api.tree.ForStatementTree loop) {
       zeroTimes(loop);
+    }
+    if (tree instanceof BinaryExpressionTree b) {
+      // anywhere, not only in conditions: return '\\u0000' <= c && c <= 'z';
+      Boolean always = charRange(b);
+      if (always != null) {
+        reportIssue(b, "This comparison is always " + always + ": a char is never below '\\u0000' or above '\\uffff'.");
+      }
+      return;
+    }
+    if (tree instanceof org.sonar.plugins.java.api.tree.ForStatementTree) {
       return;
     }
     ExpressionTree cond = switch (tree) {
@@ -75,12 +91,6 @@ public class ConstantConditionCheck extends DeepCheck {
       reportIssue(cond, "This condition is always " + ((org.sonar.plugins.java.api.tree.LiteralTree) Trees.skip(cond)).value()
         + ": the branch is dead code or unconditional.");
       return;
-    }
-    for (BinaryExpressionTree c : Trees.collect(cond, BinaryExpressionTree.class)) {
-      Boolean always = charRange(c);
-      if (always != null) {
-        reportIssue(c, "This comparison is always " + always + ": a char is never below '\\u0000' or above '\\uffff'.");
-      }
     }
     boolean negated = false;
     ExpressionTree e = Trees.skip(cond);

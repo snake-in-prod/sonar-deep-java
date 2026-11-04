@@ -1049,6 +1049,24 @@
       "args": [
         0
       ]
+    },
+    "org/springframework/web/multipart/MultipartFile#transferTo": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "javax/servlet/http/Part#write": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "jakarta/servlet/http/Part#write": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
     }
   },
   "propagators": {
@@ -1138,7 +1156,10 @@
     "java/lang/Integer#longValue": "numeric",
     "java/lang/Long#longValue": "numeric",
     "java/lang/Number#intValue": "numeric",
-    "java/lang/Number#longValue": "numeric"
+    "java/lang/Number#longValue": "numeric",
+    "org/springframework/web/multipart/MultipartFile": "receiver",
+    "javax/servlet/http/Part": "receiver",
+    "jakarta/servlet/http/Part": "receiver"
   },
   "sanitizers": [
     "java/util/UUID#fromString",

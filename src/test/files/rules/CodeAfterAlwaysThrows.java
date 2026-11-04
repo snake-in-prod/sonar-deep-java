@@ -23,7 +23,20 @@ class Failing {
 
   int resource(String name) throws java.io.IOException {
     try (java.io.InputStream in = open(name)) { // Noncompliant
-      return in.read();
+      System.out.println(in.read()); // Noncompliant
     }
+    return 0; // Noncompliant
+  }
+
+  private void reject(String msg) {
+    fail(msg);
+  }
+
+  int validated(int x) {
+    if (x < 0) {
+      reject("negative");
+      System.out.println("unreachable"); // Noncompliant
+    }
+    return x;
   }
 }

@@ -86,10 +86,13 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
       return;
     }
     Summaries.Nullable nullable = summaries.get().options().nullable();
-    java.util.Set<Symbol> seen = new java.util.HashSet<>();
-    for (IdentifierTree id : Trees.collect(method.block(), IdentifierTree.class)) {
-      Symbol f = id.symbol();
-      if (!Trees.isField(f) || !seen.add(f) || f.isStatic() && f.isFinal() || !isNullable(f, nullable)) {
+    Symbol owner = method.symbol().owner();
+    if (owner == null || !owner.isTypeSymbol()) {
+      return;
+    }
+    // the fields of the class (uses inside lambdas included), not only the names the method body shows directly
+    for (Symbol f : ((Symbol.TypeSymbol) owner).memberSymbols()) {
+      if (!f.isVariableSymbol() || f.isStatic() && f.isFinal() || !isNullable(f, nullable)) {
         continue;
       }
       List<IdentifierTree> uses = new ArrayList<>(f.usages().stream().filter(u -> within(u, method)).toList());

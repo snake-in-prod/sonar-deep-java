@@ -130,6 +130,11 @@ public class UnrelatedKeyTypeCheck extends DeepCheck {
 
   /** Type argument {@code index} of {@code type} seen as {@code generic} ({@code Map}), or null. */
   private static Type typeArgument(Type type, String generic, int index) {
+    if (type.isParameterized() && type.typeArguments().size() > index && ("java.util.Map".equals(generic) || type.typeArguments().size() == 1)
+      && !type.typeArguments().get(index).isTypeVar()) {
+      // IMap<K, V>, ConcurrentMap<K, V>, List<E>: the key (element) is the first type argument
+      return type.typeArguments().get(index);
+    }
     if (type.is(generic) || type.erasure().is(generic)) {
       return type.typeArguments().size() > index ? type.typeArguments().get(index) : null;
     }

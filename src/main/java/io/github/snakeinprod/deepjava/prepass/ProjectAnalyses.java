@@ -388,7 +388,7 @@ final class ProjectAnalyses implements Opcodes {
     if (depth < 6) {
       for (CallSite cs : m.facts().ex().calls()) {
         List<Method> targets = s.targets(cs.callKey());
-        if (targets.size() <= t.maxTargets()) {
+        if (targets.size() <= t.maxTargets() || s.options().referenceParity()) {
           targets.forEach(tm -> out.addAll(acquired(tm, depth + 1)));
         }
       }
@@ -437,7 +437,7 @@ final class ProjectAnalyses implements Opcodes {
       }
       for (LockedCall lc : m.facts().locks().lockedCalls()) {
         List<Method> targets = s.targets(lc.callKey());
-        if (targets.size() > t.maxTargets()) {
+        if (targets.size() > t.maxTargets() && !s.options().referenceParity()) {
           continue;
         }
         for (Method target : targets) {
@@ -501,9 +501,10 @@ final class ProjectAnalyses implements Opcodes {
       if (ex != null && !caught(cs.caught(), ex)) {
         out.putIfAbsent(ex, "\"" + Summaries.display(c.owner(), c.name()) + "\" at " + m.location(cs.line()));
       }
-      if (depth < 6) {
+      boolean parity = s.options().referenceParity();
+      if (depth < (parity ? 10 : 6)) {
         List<Method> targets = s.targets(cs.callKey());
-        if (targets.size() <= 2) {
+        if (targets.size() <= (parity ? t.maxTargets() : 2)) {
           for (Method tm : targets) {
             escaping(tm, depth + 1).forEach((e, how) -> {
               if (!caught(cs.caught(), e)) {

@@ -8,4 +8,8 @@ public class PublicPaths {
   java.io.File internal(String name) {
     return new java.io.File(name);
   }
+
+  public java.io.Reader read(java.io.File file) throws java.io.IOException {
+    return new java.io.FileReader(file); // Noncompliant
+  }
 }

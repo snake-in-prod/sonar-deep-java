@@ -13,6 +13,17 @@ class Delegates {
     return f.get(1, TimeUnit.SECONDS).length(); // Noncompliant
   }
 
+  interface ProxyFuture<T> extends Future<T> {
+  }
+
+  interface Client {
+    ProxyFuture<String> send();
+  }
+
+  int chained(Client c) throws Exception {
+    return c.send().get(5, TimeUnit.SECONDS).length(); // Noncompliant
+  }
+
   int wrapper(Future<String> f) throws Exception {
     return waitFor(f).length(); // Noncompliant
   }

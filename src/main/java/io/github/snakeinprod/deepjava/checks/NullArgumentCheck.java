@@ -22,32 +22,45 @@ public class NullArgumentCheck extends DeepCheck {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.METHOD_INVOCATION);
+    return List.of(Tree.Kind.METHOD_INVOCATION, Tree.Kind.NEW_CLASS);
   }
 
   @Override
   public void visitNode(Tree tree) {
-    MethodInvocationTree mit = (MethodInvocationTree) tree;
-    Symbol.MethodSymbol sym = mit.methodSymbol();
-    if (!sym.isUnknown() && sym.isVarArgsMethod()) {
-      return;
-    }
     Summaries s = summaries.get();
-    String key = Trees.resolveCallKey(mit, s);
-    if (key == null) {
+    List<? extends ExpressionTree> args;
+    Symbol.MethodSymbol sym;
+    String key;
+    if (tree instanceof org.sonar.plugins.java.api.tree.NewClassTree nc) {
+      args = nc.arguments();
+      sym = nc.methodSymbol();
+      key = sym.isUnknown() ? null : Trees.callKey(sym);
+    } else {
+      MethodInvocationTree mit = (MethodInvocationTree) tree;
+      args = mit.arguments();
+      sym = mit.methodSymbol();
+      key = Trees.resolveCallKey(mit, s);
+    }
+    if (key == null || !sym.isUnknown() && sym.isVarArgsMethod()) {
       return;
     }
     List<Summaries.Method> targets = s.targets(key);
-    if (targets.isEmpty() || targets.size() > s.thresholds().maxTargets()) {
+    if (targets.isEmpty()) {
+      library(s, key, args);
       return;
     }
-    for (int i = 0; i < mit.arguments().size(); i++) {
+    if (targets.size() > s.thresholds().maxTargets()) {
+      return;
+    }
+    boolean parity = s.options().referenceParity();
+    for (int i = 0; i < args.size(); i++) {
       int index = i;
       boolean everyPath = targets.stream().allMatch(t -> t.facts().uses().derefParams().contains(index));
       boolean somePath = !everyPath && targets.stream().allMatch(t -> s.maybeDereferences(t, index));
-      ExpressionTree arg = mit.arguments().get(i);
-      boolean lombokField = s.options().referenceParity() && lombokNullCompared(s, Trees.skip(arg));
-      if (!everyPath && !(somePath && (Trees.skip(arg).is(Tree.Kind.NULL_LITERAL) || lombokField))) {
+      ExpressionTree arg = args.get(i);
+      boolean literal = Trees.skip(arg).is(Tree.Kind.NULL_LITERAL) || nullLocal(arg);
+      // on some path only: a null literal (or a local holding one); in parity mode any nullable value
+      if (!everyPath && !(somePath && (literal || parity))) {
         continue;
       }
       String why = nullWhy(s, arg);
@@ -60,6 +73,32 @@ public class NullArgumentCheck extends DeepCheck {
     }
   }
 
+  /** Library methods modelled as dereferencing a parameter ({@code new StringReader(x)}, {@code DocumentBuilder.parse(x)}). */
+  private void library(Summaries s, String key, List<? extends ExpressionTree> args) {
+    Summaries.Call c = Summaries.parse(key);
+    for (int i = 0; i < args.size(); i++) {
+      if (!s.models().dereferencesParameter(c.owner(), c.name(), c.desc(), i, s.hierarchy())) {
+        continue;
+      }
+      String why = nullWhy(s, args.get(i));
+      if (why != null && !Trees.skip(args.get(i)).is(Tree.Kind.NULL_LITERAL)) {
+        reportIssue(args.get(i), "\"" + Summaries.display(c.owner(), c.name()).replace("<init>()", "new()") + "\" dereferences this argument, but "
+          + why + " is passed here.");
+      }
+    }
+  }
+
+  /** A local declared as {@code null} and never assigned again. */
+  private static boolean nullLocal(ExpressionTree arg) {
+    Symbol v = Trees.symbol(arg);
+    return Trees.isLocal(v) && v.declaration() instanceof org.sonar.plugins.java.api.tree.VariableTree d && d.initializer() != null
+      && Trees.skip(d.initializer()).is(Tree.Kind.NULL_LITERAL) && notReassigned(v);
+  }
+
+  private static boolean notReassigned(Symbol v) {
+    return v.usages().stream().noneMatch(u -> u.parent() instanceof org.sonar.plugins.java.api.tree.AssignmentExpressionTree a && a.variable() == u);
+  }
+
   private static String nullWhy(Summaries s, ExpressionTree arg) {
     ExpressionTree a = Trees.skip(arg);
     if (a.is(Tree.Kind.NULL_LITERAL)) {
@@ -67,6 +106,15 @@ public class NullArgumentCheck extends DeepCheck {
     }
     if (s.options().referenceParity() && lombokNullCompared(s, a)) {
       return "a field that the Lombok-generated equals() compares to null";
+    }
+    Symbol local = Trees.symbol(a);
+    if (Trees.isLocal(local) && local.declaration() instanceof org.sonar.plugins.java.api.tree.VariableTree d && d.initializer() != null
+      && notReassigned(local) && !nullTested(local)) {
+      // a local holding null or a nullable result
+      if (Trees.skip(d.initializer()).is(Tree.Kind.NULL_LITERAL)) {
+        return "\"" + local.name() + "\", which is null,";
+      }
+      a = Trees.skip(d.initializer());
     }
     if (a instanceof MethodInvocationTree call) {
       String key = Trees.resolveCallKey(call, s);
@@ -76,6 +124,10 @@ public class NullArgumentCheck extends DeepCheck {
       }
     }
     return null;
+  }
+
+  private static boolean nullTested(Symbol local) {
+    return local.usages().stream().anyMatch(u -> Derefs.isNullTest(Derefs.parent(u), u));
   }
 
   /** A field (or its plain getter) of a class with a Lombok-generated {@code equals}, which null-checks every field. */

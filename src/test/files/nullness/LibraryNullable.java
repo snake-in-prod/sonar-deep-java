@@ -32,6 +32,17 @@ class LibraryNullable {
   int reactor(Mono<String> m) {
     return m.block().length(); // Noncompliant
   }
+
+  void kubernetesCount(io.kubernetes.client.openapi.models.V1Item item) {
+    item.setCount(item.getCount() + 1); // Noncompliant
+  }
+
+  int blockedLocal(Mono<java.util.List<String>> m) {
+    java.util.List<String> lstData = m.block();
+    System.out.printf("%s%n", "loaded");
+    System.out.printf("%d%n", lstData.size()); // Noncompliant
+    return 0;
+  }
 }
 
 class Handler implements Interceptor {

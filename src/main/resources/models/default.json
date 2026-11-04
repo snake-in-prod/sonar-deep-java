@@ -72,7 +72,9 @@
     "net/shibboleth/**/URLBuilder#getUsername",
     "net/shibboleth/**/URLBuilder#getPassword",
     "net/shibboleth/**/URLBuilder#getPort",
-    "reactor/core/publisher/Mono#block"
+    "reactor/core/publisher/Mono#block",
+    "reactor/core/publisher/Flux#blockFirst",
+    "reactor/core/publisher/Flux#blockLast"
       ],
   "guards": {
     "java/util/Map#get": [
@@ -141,6 +143,37 @@
     "java/util/Optional#orElseThrow()Ljava/lang/Object;": "java/util/NoSuchElementException",
     "java/util/Iterator#next": "java/util/NoSuchElementException",
     "java/util/Scanner#next": "java/util/NoSuchElementException"
+  },
+  "dereferencedParameters": {
+    "java/io/StringReader#<init>": [0],
+    "java/io/File#<init>(Ljava/lang/String;)V": [0],
+    "java/io/FileReader#<init>": [0],
+    "java/io/FileInputStream#<init>": [0],
+    "java/io/InputStreamReader#<init>": [0],
+    "java/io/BufferedReader#<init>": [0],
+    "java/io/ByteArrayInputStream#<init>": [0],
+    "java/util/ArrayList#<init>(Ljava/util/Collection;)V": [0],
+    "java/util/LinkedList#<init>(Ljava/util/Collection;)V": [0],
+    "java/util/HashSet#<init>(Ljava/util/Collection;)V": [0],
+    "java/util/LinkedHashSet#<init>(Ljava/util/Collection;)V": [0],
+    "java/util/TreeSet#<init>(Ljava/util/Collection;)V": [0],
+    "java/util/HashMap#<init>(Ljava/util/Map;)V": [0],
+    "java/util/LinkedHashMap#<init>(Ljava/util/Map;)V": [0],
+    "java/util/TreeMap#<init>(Ljava/util/Map;)V": [0],
+    "java/util/UUID#fromString": [0],
+    "java/net/URI#<init>(Ljava/lang/String;)V": [0],
+    "java/net/URL#<init>(Ljava/lang/String;)V": [0],
+    "java/lang/String#<init>(Ljava/lang/String;)V": [0],
+    "java/lang/String#<init>([B)V": [0],
+    "java/lang/StringBuilder#<init>(Ljava/lang/String;)V": [0],
+    "java/util/Base64$Decoder#decode": [0],
+    "java/util/Base64$Encoder#encodeToString": [0],
+    "javax/xml/parsers/DocumentBuilder#parse": [0],
+    "org/xml/sax/InputSource#<init>": [0],
+    "org/json/XML#toJSONObject": [0],
+    "org/json/JSONObject#<init>(Ljava/lang/String;)V": [0],
+    "org/json/JSONArray#<init>(Ljava/lang/String;)V": [0],
+    "com/fasterxml/jackson/databind/ObjectMapper#readTree": [0]
   },
   "resourceFactories": [
     "java/nio/file/Files#newInputStream",

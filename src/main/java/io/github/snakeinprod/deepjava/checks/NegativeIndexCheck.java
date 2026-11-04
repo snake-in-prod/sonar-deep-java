@@ -90,7 +90,7 @@ public class NegativeIndexCheck extends DeepCheck {
     int pos = call.arguments().indexOf(value);
     String key = Trees.resolveCallKey(call, summaries.get());
     List<Summaries.Method> targets = key == null ? List.of() : summaries.get().targets(key);
-    return pos >= 0 && !targets.isEmpty() && targets.stream().allMatch(t -> t.facts().uses().indexParams().contains(pos));
+    return pos >= 0 && !targets.isEmpty() && targets.stream().allMatch(t -> summaries.get().indexesParameter(t, pos));
   }
 
   private static boolean isIndexUse(ExpressionTree value, Tree parent) {

@@ -35,6 +35,7 @@ public final class LibraryModels {
   private final Map<String, Set<String>> guards = new HashMap<>();
   private final Map<String, String> uncheckedThrows = new HashMap<>();
   private final Set<String> resourceFactories = new HashSet<>();
+  private final Map<String, Set<Integer>> dereferencedParameters = new HashMap<>();
 
   /** A matched model entry. */
   public record Match(String entry, Set<String> guards) {
@@ -45,6 +46,7 @@ public final class LibraryModels {
     Map<String, List<String>> guards = Map.of();
     Map<String, String> uncheckedThrows = Map.of();
     List<String> resourceFactories = List.of();
+    Map<String, List<Integer>> dereferencedParameters = Map.of();
   }
 
   public static LibraryModels load(List<Path> userFiles) throws IOException {
@@ -80,6 +82,9 @@ public final class LibraryModels {
     if (json.resourceFactories != null) {
       resourceFactories.addAll(json.resourceFactories);
     }
+    if (json.dereferencedParameters != null) {
+      json.dereferencedParameters.forEach((k, v) -> dereferencedParameters.computeIfAbsent(k, x -> new HashSet<>()).addAll(v));
+    }
   }
 
   /** Unchecked exception a library method throws on bad input (e.g. {@code Integer.parseInt}), or null. */
@@ -87,6 +92,18 @@ public final class LibraryModels {
     String byName = owner + "#" + name;
     String t = uncheckedThrows.get(byName + desc);
     return t != null ? t : uncheckedThrows.get(byName);
+  }
+
+  /** The library method or constructor dereferences parameter {@code index} ({@code new StringReader(null)} throws). */
+  public boolean dereferencesParameter(String owner, String name, String desc, int index, Hierarchy hierarchy) {
+    for (String type : hierarchy.selfAndSupertypes(owner)) {
+      String byName = type + "#" + name;
+      Set<Integer> p = dereferencedParameters.getOrDefault(byName + desc, dereferencedParameters.get(byName));
+      if (p != null && p.contains(index)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** The method returns a new resource the caller must close ({@code Files.newInputStream}). */

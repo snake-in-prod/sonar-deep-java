@@ -35,4 +35,10 @@ class Repository {
     Users u = dao.find(name);
     return u != null ? u : dao.find(id); // Noncompliant
   }
+
+  private final java.util.concurrent.ConcurrentMap<Long, String> cache = new java.util.concurrent.ConcurrentHashMap<>();
+
+  String cached(int id) {
+    return cache.get(id); // Noncompliant
+  }
 }

@@ -72,7 +72,8 @@ public class ModifiedInForEachCheck extends DeepCheck {
    */
   private boolean iterable(ExpressionTree iterated, boolean mapView) {
     String type = iterated.symbolType().fullyQualifiedName();
-    if (Trees.symbol(iterated) == null) {
+    // a variable, a field, or a getter of one (getCache().keySet())
+    if (Trees.symbol(iterated) == null && !(Trees.skip(iterated) instanceof MethodInvocationTree get && get.arguments().isEmpty())) {
       return false;
     }
     boolean jdk = type.startsWith("java.util.") || mapView && iterated.symbolType().isSubtypeOf("java.util.Map");

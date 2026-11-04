@@ -60,6 +60,31 @@ class ParityTest {
     verify("src/test/files/parity/DotRegex.java", s -> new RegexPitfallCheck(() -> s));
   }
 
+  @Test
+  void statistical_null_checks_at_low_ratios() throws Exception {
+    verify("src/test/files/parity/NullCheckedLowRatio.java", s -> new NullCheckedAtMostCallSitesCheck(() -> s));
+  }
+
+  @Test
+  void factory_returning_null() throws Exception {
+    verify("src/test/files/parity/FactoryNull.java", s -> new NullReturnDereferenceCheck(() -> s));
+  }
+
+  @Test
+  void multipart_file_names_to_paths() throws Exception {
+    verify("src/test/files/parity/Uploads.java", s -> (JavaFileScanner) TaintChecks.create("TaintedPath", () -> s));
+  }
+
+  @Test
+  void parenthesised_arithmetic_in_a_ternary_condition() throws Exception {
+    verify("src/test/files/parity/Misc.java", s -> new TernaryPrecedenceCheck(() -> s));
+  }
+
+  @Test
+  void stream_never_closed() throws Exception {
+    verify("src/test/files/parity/Unclosed.java", s -> new ResourceFromHelperCheck(() -> s));
+  }
+
   private void verify(String file, java.util.function.Function<Summaries, JavaFileScanner> check) throws Exception {
     Summaries summaries = TestSummaries.compile(Summaries.Thresholds.DEFAULT, TestSummaries.optionsFor(file), classes, file);
     CheckVerifier.newVerifier()

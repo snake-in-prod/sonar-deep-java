@@ -56,4 +56,12 @@ class Search {
   void markFree(int[] slots) {
     mark(slots, firstFree(slots)); // Noncompliant
   }
+
+  void markVia(int[] slots, int i) {
+    mark(slots, i);
+  }
+
+  void markFreeVia(int[] slots) {
+    markVia(slots, firstFree(slots)); // Noncompliant
+  }
 }

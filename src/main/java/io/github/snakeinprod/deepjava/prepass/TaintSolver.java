@@ -20,7 +20,7 @@ import java.util.Set;
  */
 final class TaintSolver {
 
-  private static final Set<String> UNTRUSTED = Set.of("USER", "COOKIE", "JWT", "NET", "MSG", "CMDLINE", "ENV", "FILE", "DESER", "DATA", "CONFIG", "PARSED");
+  private static final Set<String> UNTRUSTED = Set.of("USER", "COOKIE", "JWT", "NET", "MSG", "CMDLINE", "ENV", "FILE", "DESER", "DATA", "CONFIG", "PARSED", "LEN");
   private static final Set<String> REMOTE = Set.of("USER", "COOKIE", "JWT", "NET", "MSG");
 
   /** A parameter of a method reaches a sink (possibly in a callee). */
@@ -63,6 +63,11 @@ final class TaintSolver {
                   }
                 } else {
                   report(f.sink(), f.where(), labels, Summaries.location(c, edge.line()));
+                  if (s.options().referenceParity()) {
+                    // parity: also where the value goes into the helper, as the reference analyzer reports it
+                    report(new Sink(f.sink().kind(), edge.line(), f.sink().labels(), f.sink().api() + " in " + t.display()), c, labels,
+                      Summaries.location(c, edge.line()));
+                  }
                 }
               }
             }
@@ -282,8 +287,12 @@ final class TaintSolver {
     if ("SIZECMP".equals(sinkKind)) {
       return parity && UNTRUSTED.contains(sourceKind) ? "TaintedSize" : null;
     }
-    if ("PARSED".equals(sourceKind)) {
+    if ("PARSED".equals(sourceKind) || "LEN".equals(sourceKind)) {
       return parity && "SIZE".equals(sinkKind) ? "TaintedSize" : null;
+    }
+    if (parity && "SIZE".equals(sinkKind) && UNTRUSTED.contains(sourceKind)) {
+      // parity: a size from any untrusted input (file content, environment...)
+      return "TaintedSize";
     }
     if ("SECRET".equals(sourceKind)) {
       return Set.of("LOG", "LOGARG", "STDOUT", "EXCEPTION").contains(sinkKind) ? "SecretLeak" : null;
@@ -337,6 +346,7 @@ final class TaintSolver {
       case "DESER" -> "deserialized data";
       case "DATA" -> "binary or text input";
       case "PARSED" -> "a parsed number";
+      case "LEN" -> "the length of untrusted text";
       case "CONFIG" -> "configuration";
       case "SECRET" -> "a secret";
       default -> kind;

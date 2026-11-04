@@ -50,6 +50,12 @@ public class TernaryPrecedenceCheck extends DeepCheck {
     return false;
   }
 
+  /** Parity: any comparison with arithmetic on a side, parenthesised or not ({@code (a + b - 1) < c.size() - 1}). */
+  private static boolean arithmeticComparison(BinaryExpressionTree cond) {
+    return cond.is(COMPARISON) && !isString(cond.leftOperand()) && !isString(cond.rightOperand())
+      && (Trees.skip(cond.leftOperand()).is(ARITHMETIC) || Trees.skip(cond.rightOperand()).is(ARITHMETIC));
+  }
+
   private static boolean isString(org.sonar.plugins.java.api.tree.ExpressionTree e) {
     return e.symbolType().is("java.lang.String");
   }
@@ -57,7 +63,7 @@ public class TernaryPrecedenceCheck extends DeepCheck {
   @Override
   public void visitNode(Tree tree) {
     ConditionalExpressionTree c = (ConditionalExpressionTree) tree;
-    if (c.condition() instanceof BinaryExpressionTree cond && isMixed(cond, c)) {
+    if (c.condition() instanceof BinaryExpressionTree cond && (isMixed(cond, c) || summaries.get().options().referenceParity() && arithmeticComparison(cond))) {
       reportIssue(cond, "Arithmetic, comparison and \"?:\" are mixed without parentheses; add them to show the intended order.");
     }
     if (c.falseExpression() instanceof BinaryExpressionTree b && b.is(Tree.Kind.PLUS, Tree.Kind.MINUS, Tree.Kind.MULTIPLY)
