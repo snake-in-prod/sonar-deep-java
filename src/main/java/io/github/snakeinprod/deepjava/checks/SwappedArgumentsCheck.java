@@ -51,7 +51,7 @@ public class SwappedArgumentsCheck extends DeepCheck {
   }
 
   private void check(List<? extends org.sonar.plugins.java.api.tree.ExpressionTree> arguments, List<String> params, MethodInvocationTree mit) {
-    if (params.size() != arguments.size() || params.size() < 2) {
+    if (params.size() != arguments.size() || params.size() < 2 || arguments.isEmpty() || inSwappingMethod(arguments.get(0))) {
       return;
     }
     List<String> args = new ArrayList<>();
@@ -70,6 +70,13 @@ public class SwappedArgumentsCheck extends DeepCheck {
         }
       }
     }
+  }
+
+  /** {@code invert()} returning {@code new Fraction(denominator, numerator)}: the swap is the point. */
+  private static boolean inSwappingMethod(Tree t) {
+    Tree m = Trees.enclosingMethod(t);
+    return m instanceof org.sonar.plugins.java.api.tree.MethodTree mt
+      && mt.simpleName().name().matches("(?i).*(invert|inverse|revers|swap|flip|transpos|mirror|opposite|negat|reciprocal|backward).*");
   }
 
   /** {@code f(b, c) || f(c, b)}: both orders in one statement are deliberate symmetry. */

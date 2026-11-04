@@ -11,7 +11,7 @@ See [docs/SPEC.md](docs/SPEC.md) for the specification this plugin implements.
 
 ## Rules
 
-55 rules. Rules marked * are available but not in the default profile (on real projects most of their issues were
+58 rules. Rules marked * are available but not in the default profile (on real projects most of their issues were
 intended code; see the benchmark).
 
 | Rule | What it finds | CWE |
@@ -61,17 +61,20 @@ intended code; see the benchmark).
 | `StaticFieldInstanceLock` | Static fields should not be guarded by an instance lock | 667 |
 | `LockOrderCycle` | Locks should be acquired in a consistent order | 833 |
 | **7. exceptions** | | |
-| `UncheckedExceptionInEntryPoint`* | Unchecked exceptions should not escape thread and task entry points | 248 |
+| `UncheckedExceptionInEntryPoint` | Unchecked exceptions should not escape thread and task entry points | 248 |
 | `UnreachableCatch` | Catch blocks should be reachable | 561 |
 | `CodeAfterAlwaysThrows` | Code should not follow a call that always throws | 561 |
 | **8. dead code** | | |
 | `ConstantConditionFromCallee` | Conditions should not be constant because of what a method or field always holds | 570, 571 |
 | `DeadEnumCase` | Switch cases should be reachable | 561 |
 | `EmptyMapLookup` | Lookups in maps that are never filled are always empty | 570 |
+| `LombokUnreachableCode`** | Lombok-generated members should not test @NonNull values for null | 561 |
 | **9. smaller rules** | | |
 | `TernaryPrecedence` | Ternary operators should be parenthesized when mixed with arithmetic | 783 |
 | `CollectionModifiedInForEach` | Collections should not be modified while they are iterated |  |
 | `RegexFlagsUseless` | Regex flags should have an effect |  |
+| `RegexPitfall` | Regex literals should say what they mean | 185 |
+| `UnrelatedKeyType` | Lookups should use a key of the collection's key type |  |
 | `AssertionAfterAlwaysThrows` | Assertions should not follow a call that always throws |  |
 | `SetupAfterLastAssertion` | Tests should not set up state after the last assertion |  |
 | `ConflictingJUnitAnnotations` | JUnit annotations should not conflict |  |
@@ -81,7 +84,8 @@ intended code; see the benchmark).
 | `TimingUnsafeSecretComparison` | Secrets should be compared in constant time | 208 |
 | `CopyPasteIdentifier` | Expressions copied from a neighbour should rename every identifier |  |
 
-All rules except those marked * are added to the built-in "Sonar way" Java profile.
+All rules except those marked * are added to the built-in "Sonar way" Java profile. Rules marked ** report only
+with `sonar.deepjava.referenceParity=true`.
 
 ### "Deep Java" profile
 
@@ -119,6 +123,7 @@ Full procedure with verification and rollback, written to be followed by a perso
 | `sonar.deepjava.nullableAnnotations.ignored` | none | Qualified names to ignore, e.g. `org.apache.avro.reflect.Nullable` |
 | `sonar.deepjava.taint.dataSources` | `true` | Integers read from buffers, streams, readers and parsers count as untrusted sizes, indexes and loop bounds |
 | `sonar.deepjava.taint.logParametersSafe` | `true` | `log.info("x {}", value)` is not log injection (the layout encodes CR/LF); only concatenation into the message is reported |
+| `sonar.deepjava.referenceParity` | `false` | Also report what whole-program reference analyzers report where Deep Java deliberately stays quiet: `Objects.requireNonNull` on a nullable value counts as a dereference, statistical null checks apply to getters at 80%, null-for-null mappers propagate through delegates, concurrent maps count for for-each modification, fields null-checked by Lombok `equals()` count as nullable, and `LombokUnreachableCode` reports. Use it to compare with such an analyzer |
 
 ### Library models
 
@@ -139,17 +144,25 @@ sinks, propagators, sanitizers). Files given in `sonar.deepjava.models` use the 
 }
 ```
 
-Methods are `owner#name` (all overloads) or `owner#name(descriptor)`, in JVM internal form; `*` matches any part.
+Methods are `owner#name` (all overloads) or `owner#name(descriptor)`, in JVM internal form. In `nullableReturns`
+`*` matches within one name (`io/kubernetes/client/openapi/models/*#getSpec`, `V1ObjectMeta#get*`) and `**` across
+packages (`org/opensaml/**/Assertion#getSubject`); in sanitizers `*` matches any part.
+Annotations in the library jars themselves need no model: a method, return type or field annotated with one of
+`sonar.deepjava.nullableAnnotations`, a plain getter of such a field, a `ReturnValuesAreNullableByDefault` class or
+package, and a nullable parameter of a library method that a project method overrides are all read from bytecode.
 Sink argument indexes exclude the receiver, which is `-1`; `parameterArgs` are template parameters (log calls).
-Fields annotated with a `fieldSourceAnnotations` entry (Spring `@Value` by default) are sources. Taint source kinds:
+Fields annotated with a `fieldSourceAnnotations` entry (Spring `@Value` by default), and every field of a class
+annotated `@ConfigurationProperties`, are sources. Taint source kinds:
 `USER`, `COOKIE`, `JWT`, `NET`, `MSG`, `CMDLINE`, `ENV`, `FILE`, `DESER`, `SECRET`, `DATA` (binary or text input, sizes only),
-`CONFIG` (configuration, commands only); sink kinds: `SQL`, `COMMAND`, `PATH`, `SSRF`, `LDAP`, `XPATH`,
+`CONFIG` (configuration: commands, paths and sizes); sink kinds: `SQL`, `COMMAND`, `PATH`, `SSRF`, `LDAP`, `XPATH`,
 `LOG`, `HEADER`, `REDIRECT`, `EXPRESSION`, `FORMAT`, `SIZE`, `DECISION`, `STDOUT`.
 
 ## How it works
 
 1. **Pre-pass** (once per analysis, shared by all modules): every class in the `sonar.java.binaries` of each
-   module, and in any `target/classes` or `build/classes/*/main` directory under the project, is read with ASM.
+   module (all modules declared in the project settings are read before the first one is analysed, so call-site
+   statistics count the whole program), and in any `target/classes` or `build/classes/*/main` directory under the
+   project, is read with ASM.
    Two data flows run per method: one for nullness, value use, locks and exceptions (branch-sensitive on null
    checks, with path conditions for "null only if an argument is null"), one for taint (labels for parameters,
    sources and call results; constant folding prunes dead branches; maps are tracked per constant key).
@@ -249,8 +262,8 @@ Before the precision work, the first run of 0.1 reported 840 issues.
 - Lock identity is by class (`this` of a class, a field, or the declared type of a local), so two instances of one
   class are not told apart.
 - Recursive call cycles are cut; their summaries may be incomplete.
-- Calls the syntax tree cannot resolve (Lombok accessors) are matched by receiver type, name and argument count;
-  overloads with the same argument count are skipped.
+- Calls the syntax tree cannot resolve (Lombok accessors, also in chains such as `a.getB().getC()`) are matched by
+  receiver type, name and argument count; overloads with the same argument count are skipped.
 - Members marked `@Generated` (Lombok, annotation processors) or `@AvroGenerated` are not reported.
 
 ## Build

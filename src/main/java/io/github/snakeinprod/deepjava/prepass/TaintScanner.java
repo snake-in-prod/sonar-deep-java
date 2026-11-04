@@ -54,6 +54,9 @@ public final class TaintScanner implements Opcodes {
     try {
       return new Flow(cn, m, maxSteps, models).run();
     } catch (AnalyzerException | RuntimeException e) {
+      if (Boolean.getBoolean("deepjava.debug")) {
+        e.printStackTrace();
+      }
       return TaintFacts.EMPTY;
     }
   }
@@ -551,6 +554,10 @@ public final class TaintScanner implements Opcodes {
           return new TV(1, mapGet(receiver.labels(), key), -1, null);
         }
         String kind = models.source(mi.owner, mi.name);
+        if ("DATA".equals(kind) && java.util.Arrays.stream(Type.getArgumentTypes(mi.desc)).anyMatch(a -> a.getSort() == Type.ARRAY)) {
+          // read(buf): the count is bounded by the buffer; the bytes in buf are the input (see step())
+          return newValue(ret);
+        }
         if (kind != null && !(kind.equals("SECRET") && !isSecretType(ret))) {
           // a source read from a tainted object keeps that taint too (readLine() of a socket reader)
           Set<String> src = union(Set.of(source(kind, display(mi.owner, mi.name))), receiver == null ? Set.of() : receiver.labels());
@@ -718,8 +725,9 @@ public final class TaintScanner implements Opcodes {
         if (op >= IF_ICMPEQ && op <= IF_ICMPLE) {
           TV a = f.getStack(sp - 2);
           TV b = f.getStack(sp - 1);
-          next = bound(out, a, b);
-          next = bound(next, b, a);
+          boolean relational = op != IF_ICMPEQ && op != IF_ICMPNE;
+          next = bound(out, a, b, relational);
+          next = bound(next, b, a, relational);
         }
         Boolean taken = constantJump(op, f, sp);
         if (taken == null || taken) {
@@ -787,11 +795,11 @@ public final class TaintScanner implements Opcodes {
      * A tainted bound ({@code count > max} with {@code max} read from the same input) or a constant up to 1 (a check
      * of the lower bound only, {@code n < 1}) leaves x untrusted.
      */
-    private Frame<TV> bound(Frame<TV> f, TV x, TV other) {
+    private Frame<TV> bound(Frame<TV> f, TV x, TV other, boolean relational) {
       if (x.labels().isEmpty()) {
         return f;
       }
-      if (other.local() >= 0 && counters.contains(other.local()) && other.labels().isEmpty()) {
+      if (relational && other.local() >= 0 && counters.contains(other.local()) && other.labels().isEmpty()) {
         sink("SIZE", x.labels(), "loop bound");
         return f;
       }

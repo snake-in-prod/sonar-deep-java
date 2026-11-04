@@ -111,6 +111,7 @@ public class NullAssignedThenDereferencedCheck extends DeepCheck {
         ExpressionTree derefd = t instanceof MemberSelectExpressionTree ms ? ms.expression()
           : t instanceof ArrayAccessExpressionTree aa ? aa.expression() : null;
         if (derefd != null && var.equals(Trees.symbol(derefd)) && Trees.skip(derefd) == derefd && !Trees.assigns(later, var)
+          && !correlated(t, later, var)
           && !(t instanceof MemberSelectExpressionTree m && m.parent() instanceof AssignmentExpressionTree as && as.variable() == m)) {
           if (reported.add(t)) {
             reportIssue(t, "\"" + var.name() + "\" is set to null at line " + line + " on some path and dereferenced here without a check.");
@@ -119,6 +120,25 @@ public class NullAssignedThenDereferencedCheck extends DeepCheck {
         }
       }
       if (assigned.get(j).contains(var)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * The dereference only runs under a later condition ({@code if (forSer) x = null; ... if (forDeser) x.get()}): the
+   * conditions are often correlated, which this rule cannot see through. Reported only in parity mode.
+   */
+  private boolean correlated(Tree deref, Tree stop, Symbol var) {
+    if (summaries.get().options().referenceParity()) {
+      return false;
+    }
+    for (Tree child = deref, p = deref.parent(); p != null && child != stop; child = p, p = p.parent()) {
+      if (p instanceof org.sonar.plugins.java.api.tree.IfStatementTree i && child != i.condition()
+        || p instanceof org.sonar.plugins.java.api.tree.ConditionalExpressionTree c && child != c.condition()
+        || p.is(Tree.Kind.CONDITIONAL_AND, Tree.Kind.CONDITIONAL_OR) && child == ((BinaryExpressionTree) p).rightOperand()
+        || p.is(Tree.Kind.CASE_GROUP)) {
         return true;
       }
     }

@@ -20,6 +20,11 @@ class ParityTest {
     verify("src/test/files/parity/LombokFieldPassed.java", s -> new NullArgumentCheck(() -> s));
   }
 
+  @Test
+  void null_dereferenced_in_a_later_branch() throws Exception {
+    verify("src/test/files/parity/NullInLaterBranch.java", s -> new NullAssignedThenDereferencedCheck(() -> s));
+  }
+
   private void verify(String file, java.util.function.Function<Summaries, JavaFileScanner> check) throws Exception {
     Summaries summaries = TestSummaries.compile(Summaries.Thresholds.DEFAULT, TestSummaries.optionsFor(file), classes, file);
     CheckVerifier.newVerifier()

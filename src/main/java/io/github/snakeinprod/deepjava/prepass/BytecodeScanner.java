@@ -146,6 +146,9 @@ public final class BytecodeScanner implements Opcodes {
       return new MethodFacts(f.info(), f.nulls(), f.uses(), f.locks(), f.ex(), TaintScanner.analyze(cn, m, maxSteps, taintModels));
     } catch (AnalyzerException | RuntimeException e) {
       // ponytail: unsupported bytecode (JSR/RET, inconsistent stack) gives no summary instead of failing the analysis
+      if (Boolean.getBoolean("deepjava.debug")) {
+        e.printStackTrace();
+      }
       return MethodFacts.empty(info, returnsNormally);
     }
   }
@@ -730,7 +733,7 @@ public final class BytecodeScanner implements Opcodes {
         }
       }
       String field = v.origin() != null && v.origin().startsWith("field:" + cn.name + "#") ? v.origin().substring(v.origin().indexOf('#') + 1) : null;
-      if (field == null && v.calls().size() == 1) {
+      if (field == null && v.calls().size() == 1 && v.calls().iterator().next().contains("#")) {
         Summaries.Call c = Summaries.parse(v.calls().iterator().next());
         if (c.owner().equals(cn.name)) {
           for (MethodNode g : cn.methods) {

@@ -81,7 +81,7 @@ class Folders {
     }
     System.out.println(id);
     if (id.isEmpty()) {
-      return name.concat("x"); // Noncompliant
+      return name.concat("x");
     }
     return "";
   }

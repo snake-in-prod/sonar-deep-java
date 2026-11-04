@@ -38,6 +38,7 @@ final class TaintSolver {
     this.s = s;
   }
 
+  @SuppressWarnings("unchecked")
   List<Finding> run() {
     for (ClassFacts c : s.classes().values()) {
       for (Map.Entry<String, MethodFacts> e : c.methods().entrySet()) {
@@ -51,10 +52,15 @@ final class TaintSolver {
               if (f.param() < edge.args().size()) {
                 Set<String> labels = resolveAll(m, accept(f.sink().kind(), edge.args().get(f.param())), 0);
                 if ("SIZE".equals(f.sink().kind())) {
-                  // a size is checked (or not) by the caller that passes it: report at the call
+                  // a size is checked (or not) by the caller that passes it: report at the call, unless many callers
+                  // pass sizes to the same helper (then the helper should check, see below)
                   Sink atCall = new Sink("SIZE", edge.line(), f.sink().labels(), f.sink().api() + " in " + t.display() + " at "
                     + Summaries.location(f.where(), f.sink().line()));
-                  report(atCall, c, labels, Summaries.location(c, edge.line()));
+                  if (!labels.isEmpty()) {
+                    String helper = f.where().name() + "|" + f.sink().line() + "|" + f.sink().api();
+                    sizeCalls.computeIfAbsent(helper, k -> new ArrayList<>())
+                      .add(new Object[] {atCall, c, labels, Summaries.location(c, edge.line()), f.sink(), f.where()});
+                  }
                 } else {
                   report(f.sink(), f.where(), labels, Summaries.location(c, edge.line()));
                 }
@@ -64,8 +70,22 @@ final class TaintSolver {
         }
       }
     }
+    sizeCalls.forEach((helper, calls) -> {
+      if (calls.size() <= MAX_SIZE_CALLERS) {
+        calls.forEach(o -> report((Sink) o[0], (ClassFacts) o[1], (Set<String>) o[2], (String) o[3]));
+      } else {
+        Set<String> all = new HashSet<>();
+        calls.forEach(o -> all.addAll((Set<String>) o[2]));
+        report((Sink) calls.get(0)[4], (ClassFacts) calls.get(0)[5], all, calls.size() + " call sites, e.g. " + calls.get(0)[3]);
+      }
+    });
     return new ArrayList<>(findings.values());
   }
+
+  /** A helper that many callers pass untrusted sizes to is reported once, where it uses the size. */
+  private static final int MAX_SIZE_CALLERS = 3;
+
+  private final Map<String, List<Object[]>> sizeCalls = new LinkedHashMap<>();
 
   private List<Method> targets(Edge edge) {
     List<Method> t = s.targets(edge.callKey());

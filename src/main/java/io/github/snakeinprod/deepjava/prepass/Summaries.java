@@ -429,7 +429,7 @@ public final class Summaries {
   }
 
   private static final java.util.regex.Pattern COLLECTION =
-    java.util.regex.Pattern.compile("\\)(\\[.*|Ljava/util/\\w*(List|Set|Map|Collection|Queue|Deque);|Ljava/lang/Iterable;)");
+    java.util.regex.Pattern.compile("\\)(\\[.*|Ljava/util/\\w*(List|Set|Map|Collection);|Ljava/lang/Iterable;)");
 
   /** Return type is an array, a JDK collection or a map: callers expect an empty one rather than null. */
   static boolean returnsCollection(String desc) {

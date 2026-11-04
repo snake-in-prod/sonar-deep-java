@@ -2,22 +2,23 @@
 
 - Status: accepted
 - Date: 2026-11-04
-- Applies to: SonarQube Community Build 26.7 and later (tested on 26.7 and 26.10), Deep Java 0.3.0
+- Applies to: SonarQube Community Build 26.7 and later (tested on 26.7 and 26.10), Deep Java 0.4.0
 
 This record is written to be executed step by step, for example by an AI agent operating the SonarQube server.
 Every command below was run against a SonarQube 26.7 container before this record was written.
 
 ## Context
 
-- Deep Java is a SonarQube plugin (`deepjava`) that adds 55 Java rules. It needs the Java analyzer plugin
+- Deep Java is a SonarQube plugin (`deepjava`) that adds 58 Java rules. It needs the Java analyzer plugin
   (`java`, bundled with SonarQube) and compiled classes at analysis time.
-- 52 of the rules add themselves to the built-in "Sonar way" Java profile through the Java plugin's API. Three
-  rules (`IgnoredResultStatistical`, `MissingSuperCall`, `UncheckedExceptionInEntryPoint`) are left out on
-  purpose: on real projects most of their issues were intended code.
+- 56 of the rules add themselves to the built-in "Sonar way" Java profile through the Java plugin's API. Two
+  rules (`IgnoredResultStatistical`, `MissingSuperCall`) are left out on purpose: on real projects most of their
+  issues were intended code. `LombokUnreachableCode` is in the profile but reports only with
+  `sonar.deepjava.referenceParity=true` (set it when comparing with a whole-program reference analyzer).
 - The specification asks for a profile "Sonar way + selected sonar-findbugs rules + Deep Java".
   `docs/deep-java-profile.xml` holds the rules beyond Sonar way: the findbugs families `NP_*`, `OS_*`, `ODR_*`,
   `OBL_*`, `RV_*`, `DMI_*`, `EC_*`, `SE_*`, `UWF_*`, `IS2_INCONSISTENT_SYNC`, all of fb-contrib and Find Security
-  Bugs, and the 52 Deep Java rules.
+  Bugs, and 57 Deep Java rules (all but `MissingSuperCall`).
 - A static copy of Sonar way would drift from the server's Java plugin (on 26.7 a copy taken from a newer Java
   plugin missed 69 rules). Profile inheritance does not drift.
 - The server may also run the community branch plugin (`sonarqube-community-branch-plugin`). The two plugins do
@@ -40,7 +41,7 @@ Variables used below (set them first):
 ```sh
 SONAR_URL=http://localhost:9000          # server URL
 SONAR_ADMIN=admin:<password>             # an administrator login, or "<token>:" for a user token
-VERSION=0.3.0
+VERSION=0.4.0
 ```
 
 ### 1. Install the plugin
@@ -71,7 +72,7 @@ curl -s -u $SONAR_ADMIN $SONAR_URL/api/plugins/installed | grep -o '"key":"deepj
 curl -s -u $SONAR_ADMIN "$SONAR_URL/api/rules/search?repositories=deepjava&ps=1" | grep -o '"total":[0-9]*'
 ```
 
-Expected: the `deepjava` plugin with the installed version, and `"total":55`.
+Expected: the `deepjava` plugin with the installed version, and `"total":58`.
 
 ### 3. Create the "Deep Java" profile
 
@@ -83,7 +84,7 @@ curl -fL -o deep-java-profile.xml \
 curl -s -u $SONAR_ADMIN -X POST -F backup=@deep-java-profile.xml $SONAR_URL/api/qualityprofiles/restore
 ```
 
-Expected: `"name":"Deep Java"` and `"ruleFailures":0`. `ruleSuccesses` is 52 without sonar-findbugs and larger
+Expected: `"name":"Deep Java"` and `"ruleFailures":0`. `ruleSuccesses` is 57 without sonar-findbugs and larger
 with it. If a "Deep Java" profile already exists, the restore updates it.
 
 Make Sonar way its parent, then the default:

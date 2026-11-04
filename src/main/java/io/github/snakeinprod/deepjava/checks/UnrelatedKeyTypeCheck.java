@@ -73,7 +73,7 @@ public class UnrelatedKeyTypeCheck extends DeepCheck {
   private void check(ExpressionTree arg, Type keyType, String where) {
     Type a = arg.symbolType();
     if (keyType == null || keyType.isUnknown() || a.isUnknown() || a.is("java.lang.Object") || keyType.is("java.lang.Object")
-      || arg.is(Tree.Kind.NULL_LITERAL) || keyType.name().startsWith("?") || keyType.isTypeVar() || a.isTypeVar() || a.isNullType() || keyType.isIntersectionType()) {
+      || arg.is(Tree.Kind.NULL_LITERAL) || keyType.name().isEmpty() || keyType.name().startsWith("?") || keyType.isTypeVar() || a.isTypeVar() || a.isNullType() || keyType.isIntersectionType()) {
       return;
     }
     String argName = a.isPrimitive() ? boxed(a) : a.fullyQualifiedName();

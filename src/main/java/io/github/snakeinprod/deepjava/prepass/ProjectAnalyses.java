@@ -493,6 +493,10 @@ final class ProjectAnalyses implements Opcodes {
       }
       Summaries.Call c = Summaries.parse(cs.callKey());
       String ex = s.models().uncheckedThrow(c.owner(), c.name(), c.desc());
+      if (ex != null && depth > 0 && ex.equals("java/util/NoSuchElementException") && !s.options().referenceParity()) {
+        // Iterator.next() / Optional.get() deep in a callee is mostly guarded there (hasNext, isPresent)
+        ex = null;
+      }
       if (ex != null && !caught(cs.caught(), ex)) {
         out.putIfAbsent(ex, "\"" + Summaries.display(c.owner(), c.name()) + "\" at " + m.location(cs.line()));
       }
