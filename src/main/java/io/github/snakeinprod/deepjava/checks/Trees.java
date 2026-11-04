@@ -50,11 +50,34 @@ final class Trees {
     if (!sym.isUnknown()) {
       return "<init>".equals(sym.name()) ? null : callKey(sym);
     }
-    ExpressionTree r = receiver(mit);
-    if (r == null || r.symbolType().isUnknown()) {
+    String owner = receiverType(receiver(mit), s);
+    return owner == null ? null : s.findMethod(owner, name(mit), mit.arguments().size());
+  }
+
+  /**
+   * Internal name of an expression's type; for an unresolved call (a Lombok accessor in a chain such as
+   * {@code a.getB().getC()}) the return type of the method found in the bytecode.
+   */
+  private static String receiverType(ExpressionTree r, io.github.snakeinprod.deepjava.prepass.Summaries s) {
+    if (r == null) {
       return null;
     }
-    return s.findMethod(r.symbolType().erasure().fullyQualifiedName().replace('.', '/'), name(mit), mit.arguments().size());
+    if (!r.symbolType().isUnknown()) {
+      return r.symbolType().erasure().fullyQualifiedName().replace('.', '/');
+    }
+    if (skip(r) instanceof MethodInvocationTree inner && inner.methodSymbol().isUnknown()) {
+      String key = resolveCallKey(inner, s);
+      if (key != null) {
+        org.objectweb.asm.Type ret = org.objectweb.asm.Type.getReturnType(key.substring(key.indexOf('(')));
+        return ret.getSort() == org.objectweb.asm.Type.OBJECT ? ret.getInternalName() : null;
+      }
+    }
+    return null;
+  }
+
+  /** The method name of a call ({@code b} in {@code a.b()}), the position to report a call at in a chain. */
+  static Tree methodName(MethodInvocationTree mit) {
+    return mit.methodSelect() instanceof MemberSelectExpressionTree ms ? ms.identifier() : mit.methodSelect();
   }
 
   static ExpressionTree skip(ExpressionTree e) {

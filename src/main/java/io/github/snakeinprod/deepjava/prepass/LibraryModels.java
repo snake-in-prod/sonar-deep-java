@@ -23,6 +23,7 @@ import java.util.Set;
  * }
  * </pre>
  * A method entry is {@code owner#name} (any overload) or {@code owner#name(desc)ret}. Entries apply to subtypes.
+ * {@code *} matches within one name ({@code models/*#getSpec}, {@code V1ObjectMeta#get*}), {@code **} across packages.
  * A guard is a method name: if the caller also calls it on the same receiver, the null return is assumed handled.
  */
 public final class LibraryModels {
@@ -30,6 +31,7 @@ public final class LibraryModels {
   static final String DEFAULT_RESOURCE = "/models/default.json";
 
   private final Set<String> nullableReturns = new HashSet<>();
+  private final List<java.util.regex.Pattern> nullablePatterns = new java.util.ArrayList<>();
   private final Map<String, Set<String>> guards = new HashMap<>();
   private final Map<String, String> uncheckedThrows = new HashMap<>();
   private final Set<String> resourceFactories = new HashSet<>();
@@ -61,7 +63,13 @@ public final class LibraryModels {
   private void add(Reader reader) {
     Json json = new Gson().fromJson(reader, Json.class);
     if (json.nullableReturns != null) {
-      nullableReturns.addAll(json.nullableReturns);
+      for (String e : json.nullableReturns) {
+        if (e.contains("*")) {
+          nullablePatterns.add(glob(e));
+        } else {
+          nullableReturns.add(e);
+        }
+      }
     }
     if (json.guards != null) {
       json.guards.forEach((k, v) -> guards.computeIfAbsent(k, x -> new HashSet<>()).addAll(v));
@@ -95,10 +103,27 @@ public final class LibraryModels {
   public Match nullableReturn(String owner, String name, String desc, Hierarchy hierarchy) {
     for (String type : hierarchy.selfAndSupertypes(owner)) {
       String byName = type + "#" + name;
-      if (nullableReturns.contains(byName + desc) || nullableReturns.contains(byName)) {
+      if (nullableReturns.contains(byName + desc) || nullableReturns.contains(byName)
+        || nullablePatterns.stream().anyMatch(p -> p.matcher(byName).matches() || p.matcher(byName + desc).matches())) {
         return new Match(byName, guards.getOrDefault(byName, Set.of()));
       }
     }
     return null;
+  }
+
+  private static java.util.regex.Pattern glob(String entry) {
+    StringBuilder re = new StringBuilder();
+    for (int i = 0; i < entry.length(); i++) {
+      char ch = entry.charAt(i);
+      if (ch == '*' && i + 1 < entry.length() && entry.charAt(i + 1) == '*') {
+        re.append(".*");
+        i++;
+      } else if (ch == '*') {
+        re.append("[^/#(]*");
+      } else {
+        re.append(java.util.regex.Pattern.quote(String.valueOf(ch)));
+      }
+    }
+    return java.util.regex.Pattern.compile(re.toString());
   }
 }

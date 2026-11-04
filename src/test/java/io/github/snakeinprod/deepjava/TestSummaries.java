@@ -24,6 +24,17 @@ public final class TestSummaries {
   }
 
   public static Summaries compile(Summaries.Thresholds thresholds, Path out, String... sources) throws Exception {
+    return compile(thresholds, Summaries.Options.DEFAULT, out, sources);
+  }
+
+  /** Sources containing {@code // parity} are analysed with {@code sonar.deepjava.referenceParity=true}. */
+  public static Summaries.Options optionsFor(String source) throws java.io.IOException {
+    Summaries.Options d = Summaries.Options.DEFAULT;
+    return Files.readString(Path.of(source)).contains("// parity")
+      ? new Summaries.Options(d.nullable(), d.dataSources(), d.logParametersSafe(), true) : d;
+  }
+
+  public static Summaries compile(Summaries.Thresholds thresholds, Summaries.Options options, Path out, String... sources) throws Exception {
     JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
     List<String> args = new ArrayList<>(List.of("-g", "-d", out.toString()));
     String lombok = java.util.Arrays.stream(System.getProperty("java.class.path").split(java.io.File.pathSeparator))
@@ -45,11 +56,11 @@ public final class TestSummaries {
     try (Stream<Path> s = Files.walk(out)) {
       for (Path p : (Iterable<Path>) s.filter(f -> f.toString().endsWith(".class"))::iterator) {
         String rel = out.relativize(p).toString();
-        if (!rel.startsWith("javax") && !rel.startsWith("org") && !rel.startsWith("com")) {
+        if (!rel.matches("(javax|org|com|io|reactor)[\\\\/].*")) {
           facts.add(BytecodeScanner.scan(Files.readAllBytes(p), 20000));
         }
       }
     }
-    return new Summaries(facts, new Hierarchy(Summaries.byName(facts), List.of(out)), LibraryModels.load(List.of()), thresholds);
+    return new Summaries(facts, new Hierarchy(Summaries.byName(facts), List.of(out)), LibraryModels.load(List.of()), thresholds, options);
   }
 }

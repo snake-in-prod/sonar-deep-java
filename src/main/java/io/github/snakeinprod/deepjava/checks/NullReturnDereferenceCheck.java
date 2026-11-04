@@ -42,21 +42,21 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.METHOD_INVOCATION);
+    return List.of(Tree.Kind.METHOD_INVOCATION, Tree.Kind.METHOD);
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if (tree instanceof MethodTree method) {
+      visitOverride(method);
+      return;
+    }
     MethodInvocationTree mit = (MethodInvocationTree) tree;
     Symbol.MethodSymbol sym = mit.methodSymbol();
     Summaries s = summaries.get();
     String key = Trees.resolveCallKey(mit, s);
-    if (key == null) {
-      return;
-    }
-    Optional<NullReason> reason = s.nullReturn(key);
-    if (reason.isEmpty() || isGuarded(mit, reason.get().guards()) || !s.isReportable(key, reason.get())
-      || !sym.isUnknown() && isStandardSystemProperty(sym, mit) || isNullCheckedElsewhere(mit)) {
+    Optional<NullReason> reason = reportableReason(mit, s, key);
+    if (reason.isEmpty()) {
       return;
     }
     NullReason r = reason.get();
@@ -64,16 +64,76 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
     String evidence = !r.isStrong() && stats.checked() > 0 ?"; null-checked at " + stats.checked() + " of " + stats.sites() + " call sites" : "";
     String message = "\"" + r.method() + "\" can return null (" + r.detail() + evidence + "); check the result before dereferencing it.";
 
+    boolean parity = s.options().referenceParity();
     Tree parent = skipParentheses(mit);
-    if (isDereferenceOf(parent, mit)) {
-      reportIssue(mit, message, declarationLocation(sym), null);
+    if (isDereferenceOf(parent, mit) || parity && isRequireNonNullArgument(parent, mit)) {
+      reportIssue(Trees.methodName(mit), message, declarationLocation(sym), null);
     } else if (parent instanceof VariableTree v && isLocal(v.symbol())) {
-      IdentifierTree use = firstUseIfDereference(v.symbol());
+      IdentifierTree use = firstUseIfDereference(v.symbol(), parity);
       if (use != null) {
         List<JavaFileScannerContext.Location> secondaries = new ArrayList<>(declarationLocation(sym));
         secondaries.add(new JavaFileScannerContext.Location("Value assigned here", mit));
         reportIssue(use, message, secondaries, null);
       }
+    }
+  }
+
+  /** Why the call's result can be null, when a dereference of it is reported by this rule. */
+  static Optional<NullReason> reportableReason(MethodInvocationTree mit, Summaries s, String key) {
+    if (key == null) {
+      return Optional.empty();
+    }
+    Symbol.MethodSymbol sym = mit.methodSymbol();
+    Optional<NullReason> reason = s.nullReturn(key);
+    if (reason.isEmpty() || isGuarded(mit, reason.get().guards()) || !s.isReportable(key, reason.get())
+      || !sym.isUnknown() && isStandardSystemProperty(sym, mit) || isNullCheckedElsewhere(mit)
+      || reason.get().kind() == NullReason.Kind.NULL_FOR_NULL_ARGUMENT && !s.options().referenceParity() && isNonNullArgument(mit)) {
+      return Optional.empty();
+    }
+    return reason;
+  }
+
+  /** A mapper called with {@code new X()}, a literal or {@code this}: it does not take its null path. */
+  private static boolean isNonNullArgument(MethodInvocationTree mit) {
+    return mit.arguments().stream().map(Trees::skip).allMatch(a -> a.is(Tree.Kind.NEW_CLASS, Tree.Kind.NEW_ARRAY, Tree.Kind.STRING_LITERAL)
+      || a instanceof IdentifierTree id && "this".equals(id.name()));
+  }
+
+  /** {@code Objects.requireNonNull(value)}: the reference analyzer counts it as a dereference. */
+  static boolean isRequireNonNullArgument(Tree parent, ExpressionTree value) {
+    return parent != null && parent.is(Tree.Kind.ARGUMENTS) && parent.parent() instanceof MethodInvocationTree call
+      && "requireNonNull".equals(Trees.name(call)) && !call.arguments().isEmpty() && contains(call.arguments().get(0), value);
+  }
+
+  /**
+   * A project method overrides a library method whose parameter is annotated nullable, and dereferences that
+   * parameter before any check ({@code postHandle(..., @Nullable ModelAndView mav)}).
+   */
+  private void visitOverride(MethodTree method) {
+    Symbol.MethodSymbol sym = method.symbol();
+    if (sym.isUnknown() || method.block() == null) {
+      return;
+    }
+    Summaries s = summaries.get();
+    for (Symbol.MethodSymbol overridden : sym.overriddenSymbols()) {
+      String key = Trees.callKey(overridden);
+      if (overridden.isUnknown() || key == null) {
+        continue;
+      }
+      Summaries.Call c = Summaries.parse(key);
+      for (int i = 0; i < method.parameters().size(); i++) {
+        String lib = s.libraryNullableParameter(c.owner(), c.nameDesc(), i);
+        if (lib == null) {
+          continue;
+        }
+        VariableTree param = method.parameters().get(i);
+        IdentifierTree use = firstUseIfDereference(param.symbol(), s.options().referenceParity());
+        if (use != null) {
+          reportIssue(use, "Parameter \"" + param.simpleName().name() + "\" is annotated nullable in \"" + lib
+            + "\", which this method overrides; check it before dereferencing it.");
+        }
+      }
+      return;
     }
   }
 
@@ -127,8 +187,12 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
     return var.isVariableSymbol() && var.owner() != null && var.owner().isMethodSymbol();
   }
 
-  /** The first use of a never-reassigned local, if that use dereferences it. */
   static IdentifierTree firstUseIfDereference(Symbol var) {
+    return firstUseIfDereference(var, false);
+  }
+
+  /** The first use of a never-reassigned local, if that use dereferences it (or, in parity mode, requires it non-null). */
+  static IdentifierTree firstUseIfDereference(Symbol var, boolean parity) {
     List<IdentifierTree> usages = new ArrayList<>(var.usages());
     if (usages.isEmpty()) {
       return null;
@@ -144,7 +208,8 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
       return ta.range().start().compareTo(tb.range().start());
     });
     IdentifierTree first = usages.get(0);
-    return isDereferenceOf(skipParentheses(first), first) ? first : null;
+    Tree parent = skipParentheses(first);
+    return isDereferenceOf(parent, first) || parity && isRequireNonNullArgument(parent, first) ? first : null;
   }
 
   /**

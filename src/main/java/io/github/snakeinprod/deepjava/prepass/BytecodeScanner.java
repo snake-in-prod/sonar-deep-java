@@ -95,7 +95,20 @@ public final class BytecodeScanner implements Opcodes {
     }
     Map<String, FieldFacts> fields = new HashMap<>();
     for (FieldNode f : cn.fields) {
-      fields.put(f.name, new FieldFacts(f.access, f.desc, annotations(f.visibleAnnotations, f.invisibleAnnotations)));
+      Map<String, String> a = new HashMap<>(annotations(f.visibleAnnotations, f.invisibleAnnotations));
+      List<AnnotationNode> typeLevel = new ArrayList<>();
+      for (TypeAnnotationNode t : nn(f.visibleTypeAnnotations)) {
+        if (t.typePath == null) {
+          typeLevel.add(t);
+        }
+      }
+      for (TypeAnnotationNode t : nn(f.invisibleTypeAnnotations)) {
+        if (t.typePath == null) {
+          typeLevel.add(t);
+        }
+      }
+      a.putAll(annotations(typeLevel, null));
+      fields.put(f.name, new FieldFacts(f.access, f.desc, Map.copyOf(a)));
     }
     return new ClassFacts(cn.name, cn.superName, List.copyOf(cn.interfaces), cn.sourceFile, cn.access,
       annotations(cn.visibleAnnotations, cn.invisibleAnnotations), fields, methods);
@@ -116,7 +129,9 @@ public final class BytecodeScanner implements Opcodes {
   }
 
   static MethodFacts analyze(ClassNode cn, MethodNode m, int maxSteps, boolean switchMap, TaintModels taintModels) {
-    Info info = new Info(m.access, annotations(m.visibleAnnotations, m.invisibleAnnotations), paramNames(m), firstLine(m));
+    Map<String, String> methodAnnotations = new HashMap<>(annotations(m.visibleAnnotations, m.invisibleAnnotations));
+    methodAnnotations.putAll(returnTypeAnnotations(m));
+    Info info = new Info(m.access, Map.copyOf(methodAnnotations), paramNames(m), firstLine(m));
     boolean bodyless = m.instructions.size() == 0 || (m.access & (ACC_ABSTRACT | ACC_NATIVE)) != 0;
     boolean returnsNormally = bodyless || hasReturn(m);
     if (bodyless) {
@@ -211,6 +226,34 @@ public final class BytecodeScanner implements Opcodes {
       }
     }
     return false;
+  }
+
+  /** Type annotations on the return type itself ({@code @Nullable String m()} with a TYPE_USE annotation). */
+  static Map<String, String> returnTypeAnnotations(MethodNode m) {
+    List<AnnotationNode> found = new ArrayList<>();
+    for (List<TypeAnnotationNode> list : List.of(nn(m.visibleTypeAnnotations), nn(m.invisibleTypeAnnotations))) {
+      for (TypeAnnotationNode a : list) {
+        if (new TypeReference(a.typeRef).getSort() == TypeReference.METHOD_RETURN && a.typePath == null) {
+          found.add(a);
+        }
+      }
+    }
+    return annotations(found, null);
+  }
+
+  /** The field {@code owner#name} a method returns as is ({@code aload_0; getfield; areturn}), or null. */
+  static String plainGetterField(MethodNode m) {
+    List<AbstractInsnNode> real = new ArrayList<>();
+    for (AbstractInsnNode insn : m.instructions) {
+      if (insn.getOpcode() >= 0) {
+        real.add(insn);
+      }
+    }
+    if (real.size() == 3 && real.get(0).getOpcode() == ALOAD && ((VarInsnNode) real.get(0)).var == 0
+      && real.get(1) instanceof FieldInsnNode f && f.getOpcode() == GETFIELD && real.get(2).getOpcode() == ARETURN) {
+      return f.owner + "#" + f.name;
+    }
+    return null;
   }
 
   static <T> List<T> nn(List<T> l) {

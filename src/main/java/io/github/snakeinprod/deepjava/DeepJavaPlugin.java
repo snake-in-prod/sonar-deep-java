@@ -16,6 +16,7 @@ public class DeepJavaPlugin implements Plugin {
   public static final String NULLABLE_IGNORED = "sonar.deepjava.nullableAnnotations.ignored";
   public static final String DATA_SOURCES = "sonar.deepjava.taint.dataSources";
   public static final String LOG_PARAMETERS_SAFE = "sonar.deepjava.taint.logParametersSafe";
+  public static final String REFERENCE_PARITY = "sonar.deepjava.referenceParity";
 
   @Override
   public void define(Context context) {
@@ -37,7 +38,10 @@ public class DeepJavaPlugin implements Plugin {
       prop(DATA_SOURCES, "Binary and text input as size sources", "Integers read from buffers, streams, readers and parsers count as "
         + "untrusted sizes, indexes and loop bounds.", "true").type(org.sonar.api.PropertyType.BOOLEAN).build(),
       prop(LOG_PARAMETERS_SAFE, "Parameterised log arguments are safe", "log.info(\"x {}\", value) is not reported as log injection; "
-        + "set to false if the log layout does not encode CR/LF.", "true").type(org.sonar.api.PropertyType.BOOLEAN).build());
+        + "set to false if the log layout does not encode CR/LF.", "true").type(org.sonar.api.PropertyType.BOOLEAN).build(),
+      prop(REFERENCE_PARITY, "Reference parity", "Also report what whole-program reference analyzers report where this plugin "
+        + "deliberately stays quiet: Objects.requireNonNull on nullable values, unreachable code in Lombok-generated members, "
+        + "statistical null checks of getters.", "false").type(org.sonar.api.PropertyType.BOOLEAN).build());
   }
 
   private static PropertyDefinition.Builder prop(String key, String name, String description, String defaultValue) {

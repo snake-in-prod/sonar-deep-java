@@ -23,7 +23,7 @@ public final class Summaries {
    * @param guards   method names that, called on the same receiver, make the result safe (library models)
    */
   public record NullReason(String method, String location, NullReason cause, Kind kind, Set<String> guards) {
-    public enum Kind { RETURNS_NULL, RETURNS_CALL, ANNOTATED, LIBRARY, NULLABLE_FIELD, LOCAL_NULL }
+    public enum Kind { RETURNS_NULL, RETURNS_CALL, ANNOTATED, LIBRARY, NULLABLE_FIELD, LOCAL_NULL, COLLECTION_NULL, NULL_FOR_NULL_ARGUMENT }
 
     /** The null comes from a library model at the end of the chain (no call-site statistics needed). */
     public boolean fromLibrary() {
@@ -50,6 +50,8 @@ public final class Summaries {
         case ANNOTATED -> "annotated as nullable";
         case NULLABLE_FIELD -> "returns the @Nullable field " + location;
         case LOCAL_NULL -> location + " returns a local set to null";
+        case COLLECTION_NULL -> location + " returns null instead of an empty collection";
+        case NULL_FOR_NULL_ARGUMENT -> "generated mapper, returns null for a null argument";
         default -> location;
       });
       for (NullReason c = cause; c != null; c = c.cause()) {
@@ -164,9 +166,10 @@ public final class Summaries {
    * @param nullable           annotations that mark nullable members
    * @param dataSources        integers read from binary or text input count as untrusted sizes
    * @param logParametersSafe  parameterised log arguments ({@code log.info("x {}", v)}) are safe (the layout encodes CR/LF)
+   * @param referenceParity    also report what the reference analyzer reports where this plugin deliberately differs
    */
-  public record Options(Nullable nullable, boolean dataSources, boolean logParametersSafe) {
-    public static final Options DEFAULT = new Options(Nullable.DEFAULT, true, true);
+  public record Options(Nullable nullable, boolean dataSources, boolean logParametersSafe, boolean referenceParity) {
+    public static final Options DEFAULT = new Options(Nullable.DEFAULT, true, true, false);
   }
 
   private final Options options;
@@ -379,6 +382,9 @@ public final class Summaries {
     if (targets.size() > thresholds.maxTargets()) {
       return null;
     }
+    if (targets.isEmpty()) {
+      return libraryAnnotated(c);
+    }
     for (ClassFacts cf : targets) {
       MethodFacts mf = cf.methods().get(c.nameDesc());
       if (!c.exact() && mf.nulls().onlyNull() && targets.size() > 1) {
@@ -391,10 +397,14 @@ public final class Summaries {
       }
       Integer line = reachableNullReturn(mf);
       if (line != null) {
-        return new NullReason(display, location(cf, line), null, NullReason.Kind.RETURNS_NULL, Set.of());
+        NullReason.Kind kind = returnsCollection(c.desc()) ? NullReason.Kind.COLLECTION_NULL : NullReason.Kind.RETURNS_NULL;
+        return new NullReason(display, location(cf, line), null, kind, Set.of());
       }
-      if (mf.nulls().annotatedNullable() || nullable.matches(mf.info().annotations())) {
+      if (mf.nulls().annotatedNullable() || nullable.matches(mf.info().annotations()) || nullableByDefault(cf, mf.info().annotations())) {
         return new NullReason(display, null, null, NullReason.Kind.ANNOTATED, Set.of());
+      }
+      if (isMapperImplementation(cf, c.desc(), mf.info().access())) {
+        return new NullReason(display, null, null, NullReason.Kind.NULL_FOR_NULL_ARGUMENT, Set.of());
       }
       for (String field : mf.nulls().returnedFields()) {
         ClassFacts owner = classes.get(field.substring(0, field.indexOf('#')));
@@ -408,12 +418,110 @@ public final class Summaries {
       calls.sort(Map.Entry.comparingByValue());
       for (Map.Entry<String, Integer> call : calls) {
         Optional<NullReason> cause = nullReturn(call.getKey());
-        if (cause.isPresent() && Collections.disjoint(cause.get().guards(), mf.nulls().invokedNames())) {
+        // a mapper's null comes back only for a null argument: through a delegate the argument is unknown
+        boolean argumentNull = cause.isPresent() && cause.get().root().kind() == NullReason.Kind.NULL_FOR_NULL_ARGUMENT && !options.referenceParity();
+        if (cause.isPresent() && !argumentNull && Collections.disjoint(cause.get().guards(), mf.nulls().invokedNames())) {
           return new NullReason(display, location(cf, call.getValue()), cause.get(), NullReason.Kind.RETURNS_CALL, Set.of());
         }
       }
     }
     return null;
+  }
+
+  private static final java.util.regex.Pattern COLLECTION =
+    java.util.regex.Pattern.compile("\\)(\\[.*|Ljava/util/\\w*(List|Set|Map|Collection|Queue|Deque);|Ljava/lang/Iterable;)");
+
+  /** Return type is an array, a JDK collection or a map: callers expect an empty one rather than null. */
+  static boolean returnsCollection(String desc) {
+    return COLLECTION.matcher(desc).find();
+  }
+
+  private static final Set<String> NON_NULL = Set.of("NonNull", "Nonnull", "NotNull");
+
+  /** The class or package-info declares returns nullable by default and the method does not opt out. */
+  private boolean nullableByDefault(ClassFacts cf, Map<String, String> methodAnnotations) {
+    if (methodAnnotations.keySet().stream().anyMatch(NON_NULL::contains)) {
+      return false;
+    }
+    int slash = cf.name().lastIndexOf('/');
+    ClassFacts pkg = classes.get(cf.name().substring(0, slash + 1) + "package-info");
+    return cf.annotations().containsKey(NULLABLE_BY_DEFAULT) || pkg != null && pkg.annotations().containsKey(NULLABLE_BY_DEFAULT)
+      || hierarchy.library(cf.name().substring(0, slash + 1) + "package-info").annotations().containsKey(NULLABLE_BY_DEFAULT);
+  }
+
+  private static final String NULLABLE_BY_DEFAULT = "ReturnValuesAreNullableByDefault";
+
+  /**
+   * A library method annotated nullable in its bytecode (on the method, its return type, the field a plain getter
+   * returns, or as a class / package default), searching the owner and its supertypes.
+   */
+  private NullReason libraryAnnotated(Call c) {
+    for (String type : hierarchy.selfAndSupertypes(c.owner())) {
+      Hierarchy.Library lib = hierarchy.library(type);
+      Map<String, String> anns = lib.methods().get(c.nameDesc());
+      if (anns == null) {
+        continue;
+      }
+      String display = display(type, c.name());
+      if (nullable.matches(anns)) {
+        return new NullReason(display, null, null, NullReason.Kind.ANNOTATED, Set.of());
+      }
+      String field = lib.getterFields().get(c.nameDesc());
+      if (field != null) {
+        String fieldOwner = field.substring(0, field.indexOf('#'));
+        Map<String, String> fa = hierarchy.library(fieldOwner).fields().get(field.substring(field.indexOf('#') + 1));
+        if (fa != null && nullable.matches(fa)) {
+          return new NullReason(display, simpleName(fieldOwner) + "." + field.substring(field.indexOf('#') + 1), null,
+            NullReason.Kind.NULLABLE_FIELD, Set.of());
+        }
+      }
+      if (!anns.keySet().stream().anyMatch(NON_NULL::contains) && org.objectweb.asm.Type.getReturnType(c.desc()).getSort() >= org.objectweb.asm.Type.ARRAY) {
+        int slash = type.lastIndexOf('/');
+        if (lib.annotations().containsKey(NULLABLE_BY_DEFAULT)
+          || hierarchy.library(type.substring(0, slash + 1) + "package-info").annotations().containsKey(NULLABLE_BY_DEFAULT)) {
+          return new NullReason(display, null, null, NullReason.Kind.ANNOTATED, Set.of());
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Parameter {@code index} of a library method that a project method overrides is annotated nullable: the
+   * override must handle null. Returns the display name of the library method, or null.
+   */
+  public String libraryNullableParameter(String owner, String nameDesc, int index) {
+    for (String type : hierarchy.selfAndSupertypes(owner)) {
+      List<Map<String, String>> params = hierarchy.library(type).params().get(nameDesc);
+      if (params != null && index < params.size() && nullable.matches(params.get(index))) {
+        return display(type, nameDesc.substring(0, nameDesc.indexOf('(')));
+      }
+    }
+    return null;
+  }
+
+  /**
+   * A mapping method of a MapStruct implementation: generated mappers return null when the source is null
+   * ({@code if (dto == null) return null;}), unless configured otherwise.
+   */
+  private boolean isMapperImplementation(ClassFacts cf, String desc, int access) {
+    if ((access & (org.objectweb.asm.Opcodes.ACC_STATIC | org.objectweb.asm.Opcodes.ACC_SYNTHETIC | org.objectweb.asm.Opcodes.ACC_BRIDGE)) != 0
+      || org.objectweb.asm.Type.getReturnType(desc).getSort() < org.objectweb.asm.Type.ARRAY
+      || java.util.Arrays.stream(org.objectweb.asm.Type.getArgumentTypes(desc)).noneMatch(t -> t.getSort() >= org.objectweb.asm.Type.ARRAY)) {
+      return false;
+    }
+    List<String> supers = new ArrayList<>(cf.interfaces());
+    if (cf.superName() != null) {
+      supers.add(cf.superName());
+    }
+    for (String t : supers) {
+      ClassFacts p = classes.get(t);
+      Map<String, String> anns = p != null ? p.annotations() : hierarchy.library(t).annotations();
+      if (anns.containsKey("org.mapstruct.Mapper") || anns.containsKey("org.mapstruct.DecoratedWith")) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** First line of a {@code return null} that is not only reached after calls that always throw. */

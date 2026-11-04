@@ -2,7 +2,6 @@ package io.github.snakeinprod.deepjava.checks;
 
 import io.github.snakeinprod.deepjava.prepass.Summaries;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Supplier;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
@@ -51,13 +50,13 @@ public class NullCheckedAtMostCallSitesCheck extends DeepCheck {
       return;
     }
     Summaries.CallStats stats = s.callStats(key);
-    double ratio = isPlainGetter(s, key) ? Math.max(GETTER_RATIO, s.thresholds().minRatio()) : s.thresholds().minRatio();
+    double ratio = !s.options().referenceParity() && isPlainGetter(s, key) ? Math.max(GETTER_RATIO, s.thresholds().minRatio())
+      : s.thresholds().minRatio();
     if (stats.sites() < s.thresholds().minSites() || stats.checked() < ratio * stats.sites() || stats.checked() >= stats.sites()) {
       return;
     }
     // NullReturnDereference already reports the calls whose null it can explain
-    Optional<Summaries.NullReason> reason = s.nullReturn(key);
-    if (reason.isPresent() && s.isReportable(key, reason.get()) || NullReturnDereferenceCheck.isNullCheckedElsewhere(mit)) {
+    if (NullReturnDereferenceCheck.reportableReason(mit, s, key).isPresent() || NullReturnDereferenceCheck.isNullCheckedElsewhere(mit)) {
       return;
     }
     Summaries.Call c = Summaries.parse(key);

@@ -44,7 +44,7 @@ import org.sonar.api.config.Configuration;
 public class ProjectSummaries implements Supplier<Summaries> {
 
   private static final Logger LOG = LoggerFactory.getLogger(ProjectSummaries.class);
-  private static final int CACHE_FORMAT = 8;
+  private static final int CACHE_FORMAT = 9;
   private static final Set<String> SKIP_DIRS = Set.of(".git", "node_modules", "src", ".scannerwork", ".gradle", ".idea");
 
   private final Configuration config;
@@ -96,7 +96,9 @@ public class ProjectSummaries implements Supplier<Summaries> {
     TaintModels taintModels = TaintModels.load(models);
     String version = CACHE_FORMAT + ":" + maxSteps + ":" + taintModels.digest();
     if (!discovered) {
+      // every module up front, so call-site statistics count the whole program from the first module on
       binaries.addAll(discoverOutputDirs(baseDir));
+      declaredModules(baseDir, "");
       discovered = true;
     }
 
@@ -123,10 +125,26 @@ public class ProjectSummaries implements Supplier<Summaries> {
       new Summaries.Options(new Summaries.Nullable(config.getStringArray(DeepJavaPlugin.NULLABLE_ANNOTATIONS).length == 0
         ? Summaries.Nullable.DEFAULT.annotations() : Set.of(config.getStringArray(DeepJavaPlugin.NULLABLE_ANNOTATIONS)),
         Set.of(config.getStringArray(DeepJavaPlugin.NULLABLE_IGNORED))),
-        config.getBoolean(DeepJavaPlugin.DATA_SOURCES).orElse(true), config.getBoolean(DeepJavaPlugin.LOG_PARAMETERS_SAFE).orElse(true)));
+        config.getBoolean(DeepJavaPlugin.DATA_SOURCES).orElse(true), config.getBoolean(DeepJavaPlugin.LOG_PARAMETERS_SAFE).orElse(true),
+        config.getBoolean(DeepJavaPlugin.REFERENCE_PARITY).orElse(false)));
     LOG.info("Deep Java pre-pass: {} classes ({} from cache) from {} directories/jars in {} ms",
       byName.size(), hits[0], binaries.size(), System.currentTimeMillis() - start);
     return s;
+  }
+
+  /**
+   * Binaries and libraries of the modules declared in the project settings ({@code sonar.modules} with
+   * {@code <module>.sonar.java.binaries}, as the Maven and Gradle scanners pass them), nested modules included.
+   */
+  private void declaredModules(Path base, String prefix) throws IOException {
+    for (String module : config.getStringArray(prefix + "sonar.modules")) {
+      String p = prefix + module.trim() + ".";
+      Path moduleBase = config.get(p + "sonar.projectBaseDir").map(base::resolve)
+        .orElse(base.resolve(module.trim().replace(':', '_')));
+      binaries.addAll(resolve(moduleBase, config.getStringArray(p + "sonar.java.binaries")));
+      libraries.addAll(resolve(moduleBase, config.getStringArray(p + "sonar.java.libraries")));
+      declaredModules(moduleBase, p);
+    }
   }
 
   /** {@code target/classes} and {@code build/classes/<lang>/main} directories anywhere below {@code root}. */

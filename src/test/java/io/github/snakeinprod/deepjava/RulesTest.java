@@ -29,7 +29,7 @@ class RulesTest {
   @MethodSource("rules")
   void rule(Rules.Spec spec) throws Exception {
     String file = "src/test/files/rules/" + spec.key() + ".java";
-    Summaries summaries = TestSummaries.compile(Summaries.Thresholds.DEFAULT, classes, file);
+    Summaries summaries = TestSummaries.compile(Summaries.Thresholds.DEFAULT, TestSummaries.optionsFor(file), classes, file);
     CheckVerifier.newVerifier()
       .onFile(file)
       .withClassPath(classpath())

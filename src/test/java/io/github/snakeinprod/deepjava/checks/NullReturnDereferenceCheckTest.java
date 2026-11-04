@@ -34,12 +34,27 @@ class NullReturnDereferenceCheckTest {
   }
 
   private void verify(String file) throws Exception {
-    Summaries summaries = TestSummaries.compile(Summaries.Thresholds.DEFAULT, classes, file);
+    Summaries summaries = TestSummaries.compile(Summaries.Thresholds.DEFAULT, TestSummaries.optionsFor(file), classes, file);
     CheckVerifier.newVerifier()
       .onFile(file)
       .withClassPath(List.of(classes.toFile()))
       .withCheck(new NullReturnDereferenceCheck(() -> summaries))
       .verifyIssues();
+  }
+
+  @Test
+  void nullable_libraries_models_and_chains() throws Exception {
+    verify("src/test/files/nullness/LibraryNullable.java");
+  }
+
+  @Test
+  void mappers_futures_and_collections() throws Exception {
+    verify("src/test/files/nullness/Delegates.java");
+  }
+
+  @Test
+  void parity_counts_require_non_null() throws Exception {
+    verify("src/test/files/nullness/ParityRequireNonNull.java");
   }
 
   @Test
