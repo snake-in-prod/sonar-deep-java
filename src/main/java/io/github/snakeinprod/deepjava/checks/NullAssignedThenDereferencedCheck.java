@@ -46,6 +46,14 @@ public class NullAssignedThenDereferencedCheck extends DeepCheck {
     List<Set<Symbol>> assigned = null;
     for (int k = 0; k < body.size(); k++) {
       StatementTree s = body.get(k);
+      if (s instanceof org.sonar.plugins.java.api.tree.VariableTree v && v.initializer() != null
+        && v.initializer().is(Tree.Kind.NULL_LITERAL) && Trees.isLocal(v.symbol())) {
+        if (assigned == null) {
+          assigned = Trees.assignedPerStatement(body);
+        }
+        declaredNull(body, assigned, k, v);
+        continue;
+      }
       if (!s.is(Tree.Kind.IF_STATEMENT, Tree.Kind.TRY_STATEMENT, Tree.Kind.SWITCH_STATEMENT)) {
         continue;
       }
@@ -62,6 +70,43 @@ public class NullAssignedThenDereferencedCheck extends DeepCheck {
         }
       }
     }
+  }
+
+  /**
+   * {@code String name = null; if (c) { name = x; } ... name.trim()}: assigned on some paths only, then dereferenced.
+   * A dereference with no assignment at all in between is left to Sonar's own null rule.
+   */
+  private void declaredNull(List<StatementTree> body, List<Set<Symbol>> assigned, int k, org.sonar.plugins.java.api.tree.VariableTree v) {
+    Symbol var = v.symbol();
+    for (int j = k + 1; j < body.size(); j++) {
+      StatementTree st = body.get(j);
+      if (!assigned.get(j).contains(var)) {
+        if (Trees.any(st, org.sonar.plugins.java.api.tree.IdentifierTree.class, id -> var.equals(id.symbol()))) {
+          return; // used before any assignment: not this pattern
+        }
+        continue;
+      }
+      if (assignsOnEveryPath(st, var)) {
+        return;
+      }
+      checkAfter(body, assigned, j, var, Trees.line(v));
+      return;
+    }
+  }
+
+  private static boolean assignsOnEveryPath(StatementTree st, Symbol var) {
+    if (st instanceof org.sonar.plugins.java.api.tree.ExpressionStatementTree) {
+      return true;
+    }
+    if (st instanceof org.sonar.plugins.java.api.tree.IfStatementTree i) {
+      return i.elseStatement() != null && Trees.assigns(i.thenStatement(), var) && (Trees.assigns(i.elseStatement(), var)
+        || i.elseStatement() instanceof BlockTree b && b.body().stream().anyMatch(x -> x.is(Tree.Kind.THROW_STATEMENT, Tree.Kind.RETURN_STATEMENT)));
+    }
+    if (st instanceof org.sonar.plugins.java.api.tree.TryStatementTree t) {
+      return t.catches().stream().allMatch(c -> Trees.assigns(c.block(), var)
+        || c.block().body().stream().anyMatch(x -> x.is(Tree.Kind.THROW_STATEMENT, Tree.Kind.RETURN_STATEMENT)));
+    }
+    return false;
   }
 
   /** Nothing decided in the block: go on after the statement that encloses it ({@code if}, loop, {@code try}). */

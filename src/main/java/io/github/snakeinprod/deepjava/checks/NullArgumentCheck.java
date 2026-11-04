@@ -44,9 +44,10 @@ public class NullArgumentCheck extends DeepCheck {
     for (int i = 0; i < mit.arguments().size(); i++) {
       int index = i;
       boolean everyPath = targets.stream().allMatch(t -> t.facts().uses().derefParams().contains(index));
-      boolean somePath = targets.stream().allMatch(t -> t.facts().uses().maybeDerefParams().contains(index));
+      boolean somePath = !everyPath && targets.stream().allMatch(t -> s.maybeDereferences(t, index));
       ExpressionTree arg = mit.arguments().get(i);
-      if (!everyPath && !(somePath && Trees.skip(arg).is(Tree.Kind.NULL_LITERAL))) {
+      boolean lombokField = s.options().referenceParity() && lombokNullCompared(s, Trees.skip(arg));
+      if (!everyPath && !(somePath && (Trees.skip(arg).is(Tree.Kind.NULL_LITERAL) || lombokField))) {
         continue;
       }
       String why = nullWhy(s, arg);

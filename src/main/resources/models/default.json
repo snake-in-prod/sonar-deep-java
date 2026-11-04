@@ -46,7 +46,7 @@
     "jakarta/servlet/http/HttpServletRequest#getSession(Z)Ljakarta/servlet/http/HttpSession;",
     "org/springframework/core/env/PropertyResolver#getProperty(Ljava/lang/String;)Ljava/lang/String;",
     "com/fasterxml/jackson/databind/JsonNode#get",
-    "java/util/concurrent/Future#get(JLjava/util/concurrent/TimeUnit;)Ljava/lang/Object;",
+    "java/util/concurrent/Future#get(JLjava/util/concurrent/TimeUnit;)**",
     "org/opensaml/**/Assertion#getSubject",
     "org/opensaml/**/Subject#getNameID",
     "org/opensaml/**/StatusResponseType#getStatus",

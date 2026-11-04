@@ -283,6 +283,43 @@ public final class Summaries {
     return null;
   }
 
+  private final Map<String, Boolean> maybeDeref = new HashMap<>();
+
+  /**
+   * Parameter {@code index} of {@code m} is dereferenced on some path without a null check, in {@code m} or in a
+   * method it passes the parameter to (up to four calls deep).
+   */
+  public synchronized boolean maybeDereferences(Method m, int index) {
+    return maybeDereferences(m, index, 0);
+  }
+
+  private boolean maybeDereferences(Method m, int index, int depth) {
+    if (m.facts().uses().maybeDerefParams().contains(index)) {
+      return true;
+    }
+    if (depth >= 4) {
+      return false;
+    }
+    String memoKey = m.owner().name() + "#" + m.nameDesc() + "#" + index;
+    Boolean known = maybeDeref.get(memoKey);
+    if (known != null) {
+      return known;
+    }
+    maybeDeref.put(memoKey, false);
+    boolean r = false;
+    for (String fwd : m.facts().uses().paramForwards().getOrDefault(index, Set.of())) {
+      int bar = fwd.lastIndexOf('|');
+      List<Method> t = targets(fwd.substring(0, bar));
+      int arg = Integer.parseInt(fwd.substring(bar + 1));
+      if (!t.isEmpty() && t.size() <= thresholds.maxTargets() && t.stream().allMatch(x -> maybeDereferences(x, arg, depth + 1))) {
+        r = true;
+        break;
+      }
+    }
+    maybeDeref.put(memoKey, r);
+    return r;
+  }
+
   /** Project implementations a call can reach (class hierarchy analysis over project types). */
   public List<Method> targets(String callKey) {
     Call c = parse(callKey);
@@ -340,7 +377,38 @@ public final class Summaries {
 
   public CallStats callStats(String callKey) {
     String k = BytecodeScanner.statKey(callKey);
-    return new CallStats(callSites.getOrDefault(k, 0), nullChecks.getOrDefault(k, 0));
+    int sites = 0;
+    int checked = 0;
+    for (String copy : copies(k)) {
+      sites += callSites.getOrDefault(copy, 0);
+      checked += nullChecks.getOrDefault(copy, 0);
+    }
+    return new CallStats(sites, checked);
+  }
+
+  private Map<String, List<String>> copyGroups;
+
+  /**
+   * The same method of identical copies of a class in other packages (same simple name, same methods): their
+   * callers form one population.
+   */
+  private synchronized List<String> copies(String statKey) {
+    if (copyGroups == null) {
+      copyGroups = new HashMap<>();
+      Map<String, List<String>> byShape = new HashMap<>();
+      for (ClassFacts c : classes.values()) {
+        byShape.computeIfAbsent(simpleName(c.name()) + "|" + new java.util.TreeSet<>(c.methods().keySet()), x -> new ArrayList<>()).add(c.name());
+      }
+      byShape.values().stream().filter(g -> g.size() > 1).forEach(g -> g.forEach(n -> copyGroups.put(n, g)));
+    }
+    int hash = statKey.indexOf('#');
+    List<String> group = hash < 0 ? null : copyGroups.get(statKey.substring(0, hash));
+    if (group == null) {
+      return List.of(statKey);
+    }
+    List<String> out = new ArrayList<>();
+    group.forEach(owner -> out.add(owner + statKey.substring(hash)));
+    return out;
   }
 
   /**
@@ -418,7 +486,9 @@ public final class Summaries {
       List<Map.Entry<String, Integer>> calls = new ArrayList<>(mf.nulls().returnedCalls().entrySet());
       calls.sort(Map.Entry.comparingByValue());
       for (Map.Entry<String, Integer> call : calls) {
-        Optional<NullReason> cause = nullReturn(call.getKey());
+        // parity: a lookup wrapper (Registry.getInstance().get(key)) passes the map's null on, whatever the key
+        String causeKey = options.referenceParity() && call.getKey().startsWith(BytecodeScanner.KNOWN_LOOKUP) ? call.getKey().substring(1) : call.getKey();
+        Optional<NullReason> cause = nullReturn(causeKey);
         // a mapper's null comes back only for a null argument: through a delegate the argument is unknown
         boolean argumentNull = cause.isPresent() && cause.get().root().kind() == NullReason.Kind.NULL_FOR_NULL_ARGUMENT && !options.referenceParity();
         if (cause.isPresent() && !argumentNull && Collections.disjoint(cause.get().guards(), mf.nulls().invokedNames())) {

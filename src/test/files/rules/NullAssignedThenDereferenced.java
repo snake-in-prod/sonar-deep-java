@@ -96,4 +96,33 @@ class Folders {
     }
     return name.trim();
   }
+
+  String declared(boolean a, String id) {
+    String name = null;
+    if (a) {
+      name = id;
+    }
+    System.out.println(id);
+    return name.trim(); // Noncompliant
+  }
+
+  String bothBranches(boolean a, String id) {
+    String name = null;
+    if (a) {
+      name = id;
+    } else {
+      name = "x";
+    }
+    return name.trim();
+  }
+
+  String fromTry(String id) {
+    String name = null;
+    try {
+      name = find(id).getName();
+    } catch (RuntimeException e) {
+      System.out.println(e);
+    }
+    return name.trim(); // Noncompliant
+  }
 }

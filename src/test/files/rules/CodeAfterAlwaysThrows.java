@@ -16,4 +16,14 @@ class Failing {
     }
     return x;
   }
+
+  private java.io.InputStream open(String name) {
+    throw new UnsupportedOperationException(name);
+  }
+
+  int resource(String name) throws java.io.IOException {
+    try (java.io.InputStream in = open(name)) { // Noncompliant
+      return in.read();
+    }
+  }
 }

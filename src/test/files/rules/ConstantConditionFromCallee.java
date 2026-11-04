@@ -27,4 +27,15 @@ class Flags {
       System.out.println("never");
     }
   }
+
+  private static final int RETRIES = 0;
+
+  void never() {
+    for (int attempt = 1; attempt <= RETRIES; attempt++) { // Noncompliant
+      System.out.println(attempt);
+    }
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      System.out.println(attempt);
+    }
+  }
 }

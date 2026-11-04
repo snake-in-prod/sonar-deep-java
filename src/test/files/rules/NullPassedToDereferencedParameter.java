@@ -51,3 +51,25 @@ class Guarded {
     return s.isEmpty() ? "e" : s;
   }
 }
+
+class Formatter {
+  String format(String detail) {
+    return detail.trim();
+  }
+}
+
+class Responder {
+  private final Formatter formatter = new Formatter();
+
+  String build(int code, String detail) {
+    if (code > 0) {
+      return formatter.format(detail);
+    }
+    return "";
+  }
+
+  String fail() {
+    return build(1, null); // Noncompliant
+  }
+}
+

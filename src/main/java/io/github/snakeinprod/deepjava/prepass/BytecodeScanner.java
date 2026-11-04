@@ -72,7 +72,15 @@ public final class BytecodeScanner implements Opcodes {
 
   private static final Set<String> NULL_TESTS = Set.of(
     "java/util/Objects#isNull", "java/util/Objects#nonNull", "java/util/Objects#requireNonNull",
-    "java/util/Objects#requireNonNullElse", "java/util/Objects#requireNonNullElseGet", "java/util/Optional#ofNullable");
+    "java/util/Objects#requireNonNullElse", "java/util/Objects#requireNonNullElseGet", "java/util/Optional#ofNullable",
+    "org/springframework/util/ObjectUtils#isEmpty", "org/springframework/util/StringUtils#isEmpty",
+    "org/springframework/util/StringUtils#hasText", "org/springframework/util/StringUtils#hasLength",
+    "org/springframework/util/CollectionUtils#isEmpty", "org/apache/commons/lang3/StringUtils#isEmpty",
+    "org/apache/commons/lang3/StringUtils#isNotEmpty", "org/apache/commons/lang3/StringUtils#isBlank",
+    "org/apache/commons/lang3/StringUtils#isNotBlank", "org/apache/commons/lang3/ObjectUtils#isEmpty",
+    "org/apache/commons/lang3/ObjectUtils#isNotEmpty", "org/apache/commons/collections4/CollectionUtils#isEmpty",
+    "org/apache/commons/collections4/CollectionUtils#isNotEmpty", "org/apache/commons/collections4/MapUtils#isEmpty",
+    "com/google/common/base/Strings#isNullOrEmpty");
 
   private static final Set<String> KEY_LOOKUPS = Set.of("get", "containsKey", "remove", "getOrDefault");
 
@@ -427,6 +435,8 @@ public final class BytecodeScanner implements Opcodes {
           if (!exact && ("readLock".equals(mi.name) || "writeLock".equals(mi.name)) && values.get(0).origin() != null
             && mi.owner.endsWith("ReentrantReadWriteLock")) {
             origin = values.get(0).origin() + "." + mi.name;
+          } else if (mi.getOpcode() != INVOKESTATIC && Flow.callId(values) != null) {
+            origin = "call:" + Flow.callId(values);
           }
           return new V(1, false, Set.of(knownLookup ? KNOWN_LOOKUP + key : key), -1, origin);
         }
@@ -502,6 +512,7 @@ public final class BytecodeScanner implements Opcodes {
     private final Set<Integer> nullCompared = new HashSet<>();
     private final Map<Integer, String> keyUses = new HashMap<>();
     private final Map<Integer, String> nonNullChecks = new HashMap<>();
+    private final Map<Integer, Set<String>> forwards = new HashMap<>();
     private final Map<String, Set<String>> fieldCalls = new HashMap<>();
     private final Map<String, String> fieldInits = new HashMap<>();
     // locks
@@ -670,6 +681,18 @@ public final class BytecodeScanner implements Opcodes {
       for (String c : nullChecks) {
         checks.merge(c.substring(0, c.lastIndexOf('@')), 1, Integer::sum);
       }
+      // "x.getA() != null && x.getA().getB()": the same call on the same receiver after a check counts as checked
+      for (int i = 0; i < insns.size(); i++) {
+        if (insns.get(i) instanceof MethodInsnNode mi && frames[i] != null && isRef(Type.getReturnType(mi.desc)) && !isDiscarded(mi)) {
+          String r = receiverId(frames[i], mi);
+          String k = statKey(callKey(false, mi.owner, mi.name, mi.desc));
+          Integer checkedAt = r == null ? null : firstCheck.get(k + "@" + r);
+          if (checkedAt != null && checkedAt < i) {
+            checks.merge(k, 1, Integer::sum);
+          }
+        }
+      }
+      checks.replaceAll((k, n) -> Math.min(n, callSites.getOrDefault(k, n)));
       Set<Integer> derefParams = new HashSet<>(refParams);
       derefParams.removeAll(notDerefAtReturn);
       derefParams.removeAll(reassigned);
@@ -686,6 +709,12 @@ public final class BytecodeScanner implements Opcodes {
           maybeShifted.add(paramIndex(p));
         }
       }
+      Map<Integer, Set<String>> forwardShifted = new HashMap<>();
+      forwards.forEach((p, targets) -> {
+        if (refParams.contains(p) && !nullCompared.contains(p) && !reassigned.contains(p)) {
+          forwardShifted.put(paramIndex(p), Set.copyOf(targets));
+        }
+      });
       Map<Integer, String> keyShifted = new HashMap<>();
       keyUses.forEach((p, field) -> {
         if (p >= firstParam && p < paramEnd && !reassigned.contains(p)) {
@@ -706,7 +735,8 @@ public final class BytecodeScanner implements Opcodes {
       UseFacts uses = new UseFacts(Map.copyOf(callSites), Map.copyOf(checks), Map.copyOf(valueSites), Map.copyOf(ignored),
         Set.copyOf(derefShifted), Set.copyOf(closedShifted), callsSuper, Map.copyOf(staticWrites), Set.copyOf(fieldWrites),
         Set.copyOf(fieldEscapes), Map.copyOf(fieldCalls), Map.copyOf(fieldInits), Set.copyOf(enumLoads), Map.copyOf(switchMapLoads),
-        Set.copyOf(indexShifted), Set.copyOf(maybeShifted), Map.copyOf(keyShifted), Map.copyOf(nonNullChecks));
+        Set.copyOf(indexShifted), Set.copyOf(maybeShifted), Map.copyOf(keyShifted), Map.copyOf(nonNullChecks),
+        Map.copyOf(forwardShifted));
       LockFacts lockFacts = new LockFacts(List.copyOf(accesses), List.copyOf(edges), List.copyOf(lockedCalls), Map.copyOf(acquired),
         Set.copyOf(heldAtReturn), Map.copyOf(reacquired));
       calls.addAll(lambdaRefs);
@@ -879,7 +909,48 @@ public final class BytecodeScanner implements Opcodes {
       return o.startsWith("new:") ? o.substring(4) : o.startsWith("empty:") ? o.substring(6) : null;
     }
 
+    /** Null checks of a call's result, by call key and receiver ({@code key@receiver}), to the first checking instruction. */
+    private final Map<String, Integer> firstCheck = new HashMap<>();
+
+    /** Identity of a call's receiver (a local, a field, {@code this}), or null. */
+    private String receiverId(Frame<V> f, MethodInsnNode mi) {
+      if (mi.getOpcode() == INVOKESTATIC) {
+        return null;
+      }
+      int argc = Type.getArgumentTypes(mi.desc).length;
+      List<V> values = new ArrayList<>();
+      for (int a = argc; a >= 0; a--) {
+        values.add(f.getStack(f.getStackSize() - 1 - a));
+      }
+      return callId(values);
+    }
+
+    /** Receiver and arguments of a call, when each is a local, a field or a constant: the same call made again. */
+    static String callId(List<? extends V> values) {
+      StringBuilder sb = new StringBuilder();
+      for (int i = 0; i < values.size(); i++) {
+        V v = values.get(i);
+        String id = id(v) != null ? id(v) : i > 0 && v.isConstant() ? v.origin() : null;
+        if (id == null) {
+          return null;
+        }
+        sb.append(i == 0 ? "" : ",").append(id);
+      }
+      return sb.toString();
+    }
+
+    private static String id(V receiver) {
+      if (receiver.local() >= 0) {
+        return "L" + receiver.local();
+      }
+      String o = receiver.origin();
+      return o != null && (o.startsWith("field:") || o.startsWith("static:")) ? o : null;
+    }
+
     private void recordNullCheck(V v, int insnIndex) {
+      if (v != null && v.origin() != null && v.origin().startsWith("call:") && v.calls().size() == 1) {
+        firstCheck.merge(statKey(v.calls().iterator().next()) + "@" + v.origin().substring(5), insnIndex, Math::min);
+      }
       if (v != null) {
         for (String c : v.calls()) {
           if (!EXPLICIT_NULL.equals(c)) {
@@ -1053,6 +1124,15 @@ public final class BytecodeScanner implements Opcodes {
             fieldEscapes.add(o.substring(o.indexOf(':') + 1));
           }
         }
+        if (!mi.owner.startsWith("java/")) {
+          String target = callKey(op == INVOKESTATIC || op == INVOKESPECIAL, mi.owner, mi.name, mi.desc);
+          for (int a = 0; a < argc; a++) {
+            int slot = f.getStack(sp - argc + a).local();
+            if (slot >= firstParam && slot < paramEnd) {
+              forwards.computeIfAbsent(slot, k -> new HashSet<>()).add(target + "|" + a);
+            }
+          }
+        }
         if (hasReceiver && argc >= 1 && KEY_LOOKUPS.contains(mi.name) && mi.desc.startsWith("(Ljava/lang/Object;")) {
           V receiver = f.getStack(sp - 1 - argc);
           V key = f.getStack(sp - argc);
@@ -1070,7 +1150,7 @@ public final class BytecodeScanner implements Opcodes {
           if ("close".equals(mi.name) && argc == 0 && receiver.local() >= firstParam && receiver.local() < paramEnd) {
             closedParams.add(receiver.local());
           }
-          if (LOCK_OWNERS.contains(mi.owner) && o != null) {
+          if (LOCK_OWNERS.contains(mi.owner) && o != null && !o.startsWith("call:")) {
             boolean stamped = mi.owner.endsWith("StampedLock");
             String id = "lock:" + o.substring(o.indexOf(':') + 1);
             if (Set.of("lock", "lockInterruptibly").contains(mi.name) || stamped && Set.of("writeLock", "readLock").contains(mi.name)) {

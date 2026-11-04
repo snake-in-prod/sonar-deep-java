@@ -27,11 +27,40 @@ public class ConstantConditionCheck extends DeepCheck {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.IF_STATEMENT, Tree.Kind.WHILE_STATEMENT, Tree.Kind.DO_STATEMENT, Tree.Kind.CONDITIONAL_EXPRESSION);
+    return List.of(Tree.Kind.IF_STATEMENT, Tree.Kind.WHILE_STATEMENT, Tree.Kind.DO_STATEMENT, Tree.Kind.CONDITIONAL_EXPRESSION,
+      Tree.Kind.FOR_STATEMENT);
+  }
+
+  /** {@code for (int i = 1; i <= RETRIES; i++)} with {@code RETRIES = 0}: the loop never runs. */
+  private void zeroTimes(org.sonar.plugins.java.api.tree.ForStatementTree loop) {
+    if (loop.initializer().size() != 1 || !(loop.initializer().get(0) instanceof org.sonar.plugins.java.api.tree.VariableTree v)
+      || v.initializer() == null || !(loop.condition() instanceof BinaryExpressionTree c) || !(c.leftOperand() instanceof org.sonar.plugins.java.api.tree.IdentifierTree id)
+      || !id.symbol().equals(v.symbol())) {
+      return;
+    }
+    Integer start = v.initializer().asConstant(Integer.class).orElse(null);
+    Integer bound = c.rightOperand().asConstant(Integer.class).orElse(null);
+    if (start == null || bound == null) {
+      return;
+    }
+    boolean runs = switch (c.kind()) {
+      case LESS_THAN -> start < bound;
+      case LESS_THAN_OR_EQUAL_TO -> start <= bound;
+      case GREATER_THAN -> start > bound;
+      case GREATER_THAN_OR_EQUAL_TO -> start >= bound;
+      default -> true;
+    };
+    if (!runs) {
+      reportIssue(c, "This loop never runs: \"" + v.simpleName().name() + "\" starts at " + start + " and the condition is false.");
+    }
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if (tree instanceof org.sonar.plugins.java.api.tree.ForStatementTree loop) {
+      zeroTimes(loop);
+      return;
+    }
     ExpressionTree cond = switch (tree) {
       case IfStatementTree i -> i.condition();
       case WhileStatementTree w -> w.condition();

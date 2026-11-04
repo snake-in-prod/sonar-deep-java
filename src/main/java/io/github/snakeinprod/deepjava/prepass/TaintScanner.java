@@ -572,6 +572,11 @@ public final class TaintScanner implements Opcodes {
         if (models.isSanitizer(mi.owner, mi.name) || isCrlfStrip(mi, values)) {
           return newValue(ret);
         }
+        if (PARSERS.contains(mi.owner + "#" + mi.name)) {
+          // a number parsed from text is a source of its own (parity mode reports its size uses), and keeps the text's taint
+          Set<String> l = union(argLabels, Set.of(source("PARSED", display(mi.owner, mi.name))));
+          return new TV(ret.getSize(), numeric(l), -1, null);
+        }
         String p = models.propagation(mi.owner, mi.name);
         if (p != null) {
           Set<String> l = switch (p) {
@@ -804,6 +809,10 @@ public final class TaintScanner implements Opcodes {
         return f;
       }
       Integer c = intConst(other);
+      if (relational && c != null) {
+        // value > 255: a bound check on untrusted input (parity mode reports it as a size use)
+        sink("SIZECMP", x.labels(), "comparison");
+      }
       if (!other.labels().isEmpty() || c != null && c <= 1) {
         return f;
       }
@@ -811,6 +820,9 @@ public final class TaintScanner implements Opcodes {
       clear(r, x);
       return r;
     }
+
+    private static final Set<String> PARSERS = Set.of("java/lang/Integer#parseInt", "java/lang/Integer#valueOf", "java/lang/Integer#decode",
+      "java/lang/Long#parseLong", "java/lang/Long#valueOf", "java/lang/Long#decode", "java/lang/Short#parseShort");
 
     private static void clear(Frame<TV> f, TV v) {
       if (v.local() >= 0) {

@@ -25,6 +25,21 @@ class ParityTest {
     verify("src/test/files/parity/NullInLaterBranch.java", s -> new NullAssignedThenDereferencedCheck(() -> s));
   }
 
+  @Test
+  void parsed_numbers_comparisons_and_sleeps() throws Exception {
+    verify("src/test/files/parity/ParsedSizes.java", s -> (JavaFileScanner) TaintChecks.create("TaintedSize", () -> s));
+  }
+
+  @Test
+  void public_parameters_to_paths() throws Exception {
+    verify("src/test/files/parity/PublicPaths.java", s -> (JavaFileScanner) TaintChecks.create("TaintedPath", () -> s));
+  }
+
+  @Test
+  void numbers_into_cookies() throws Exception {
+    verify("src/test/files/parity/CookieNumbers.java", s -> (JavaFileScanner) TaintChecks.create("TaintedHeader", () -> s));
+  }
+
   private void verify(String file, java.util.function.Function<Summaries, JavaFileScanner> check) throws Exception {
     Summaries summaries = TestSummaries.compile(Summaries.Thresholds.DEFAULT, TestSummaries.optionsFor(file), classes, file);
     CheckVerifier.newVerifier()

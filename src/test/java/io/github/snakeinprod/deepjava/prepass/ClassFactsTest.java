@@ -42,4 +42,22 @@ class ClassFactsTest {
     ClassFacts facts = BytecodeScanner.scan(bytes, 20000);
     assertThat(facts.methods().get("f(Ljava/lang/String;)Ljava/lang/String;").nulls().invokedNames()).contains("trim");
   }
+
+  static class Guarded {
+    int g(StringBuilder sb) {
+      if (sb.toString() != null && sb.toString().length() > 0) {
+        return 1;
+      }
+      return 0;
+    }
+  }
+
+  @Test
+  void a_call_repeated_after_its_null_check_counts_as_checked() throws Exception {
+    byte[] bytes = Files.readAllBytes(Path.of("target/test-classes/io/github/snakeinprod/deepjava/prepass/ClassFactsTest$Guarded.class"));
+    ClassFacts.UseFacts uses = BytecodeScanner.scan(bytes, 20000).methods().get("g(Ljava/lang/StringBuilder;)I").uses();
+    String key = "java/lang/StringBuilder#toString()Ljava/lang/String;";
+    assertThat(uses.callSites().get(key)).isEqualTo(2);
+    assertThat(uses.nullChecks().get(key)).isEqualTo(2);
+  }
 }

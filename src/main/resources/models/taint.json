@@ -1037,6 +1037,18 @@
       "args": [
         0
       ]
+    },
+    "java/lang/Thread#sleep": {
+      "kind": "SIZE",
+      "args": [
+        0
+      ]
+    },
+    "java/util/concurrent/TimeUnit#sleep": {
+      "kind": "SIZE",
+      "args": [
+        0
+      ]
     }
   },
   "propagators": {
@@ -1121,7 +1133,12 @@
     "java/util/Properties": "receiver",
     "java/util/Properties#load": "all",
     "java/io/InputStreamReader": "receiver",
-    "java/io/BufferedInputStream#<init>": "args"
+    "java/io/BufferedInputStream#<init>": "args",
+    "java/lang/Integer#decode": "numeric",
+    "java/lang/Integer#longValue": "numeric",
+    "java/lang/Long#longValue": "numeric",
+    "java/lang/Number#intValue": "numeric",
+    "java/lang/Number#longValue": "numeric"
   },
   "sanitizers": [
     "java/util/UUID#fromString",

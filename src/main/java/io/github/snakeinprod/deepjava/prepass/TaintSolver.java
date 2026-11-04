@@ -20,7 +20,7 @@ import java.util.Set;
  */
 final class TaintSolver {
 
-  private static final Set<String> UNTRUSTED = Set.of("USER", "COOKIE", "JWT", "NET", "MSG", "CMDLINE", "ENV", "FILE", "DESER", "DATA", "CONFIG");
+  private static final Set<String> UNTRUSTED = Set.of("USER", "COOKIE", "JWT", "NET", "MSG", "CMDLINE", "ENV", "FILE", "DESER", "DATA", "CONFIG", "PARSED");
   private static final Set<String> REMOTE = Set.of("USER", "COOKIE", "JWT", "NET", "MSG");
 
   /** A parameter of a method reaches a sink (possibly in a callee). */
@@ -79,7 +79,40 @@ final class TaintSolver {
         report((Sink) calls.get(0)[4], (ClassFacts) calls.get(0)[5], all, calls.size() + " call sites, e.g. " + calls.get(0)[3]);
       }
     });
+    if (s.options().referenceParity()) {
+      publicParametersToPaths();
+    }
     return new ArrayList<>(findings.values());
+  }
+
+  /** Parity mode: a parameter of a public method of a public class that reaches a file path, as an API input. */
+  private void publicParametersToPaths() {
+    for (ClassFacts c : s.classes().values()) {
+      if ((c.access() & org.objectweb.asm.Opcodes.ACC_PUBLIC) == 0) {
+        continue;
+      }
+      for (Map.Entry<String, MethodFacts> e : c.methods().entrySet()) {
+        int access = e.getValue().info().access();
+        if ((access & org.objectweb.asm.Opcodes.ACC_PUBLIC) == 0 || (access & org.objectweb.asm.Opcodes.ACC_SYNTHETIC) != 0) {
+          continue;
+        }
+        Method m = new Method(c, e.getKey(), e.getValue());
+        org.objectweb.asm.Type[] params = org.objectweb.asm.Type.getArgumentTypes(m.desc());
+        int self = (access & org.objectweb.asm.Opcodes.ACC_STATIC) == 0 ? 1 : 0;
+        for (SinkFlow f : sinkParams(m, 0)) {
+          int p = f.param() - self;
+          if (!"PATH".equals(f.sink().kind()) || p < 0 || p >= params.length
+            || !Set.of("Ljava/lang/String;", "Ljava/io/File;", "Ljava/nio/file/Path;").contains(params[p].getDescriptor())) {
+            continue;
+          }
+          List<String> names = m.facts().info().paramNames();
+          String name = p < names.size() && !names.get(p).isEmpty() ? names.get(p) : "#" + (p + 1);
+          findings.putIfAbsent("TaintedPath|" + f.where().sourcePath() + "|" + f.sink().line(), new Finding("TaintedPath",
+            f.where().sourcePath(), f.sink().line(), "File path (" + f.sink().api() + ") built from parameter \"" + name + "\" of the public \""
+              + m.display() + "\"; validate it before using it as a path."));
+        }
+      }
+    }
   }
 
   /** A helper that many callers pass untrusted sizes to is reported once, where it uses the size. */
@@ -109,8 +142,8 @@ final class TaintSolver {
   }
 
   /** Labels that a sink of {@code kind} accepts: numbers only for size sinks, never for injection sinks. */
-  private static Set<String> accept(String kind, Set<String> labels) {
-    if ("SIZE".equals(kind)) {
+  private Set<String> accept(String kind, Set<String> labels) {
+    if ("SIZE".equals(kind) || "SIZECMP".equals(kind) || "HEADER".equals(kind) && s.options().referenceParity()) {
       return labels;
     }
     Set<String> out = new HashSet<>();
@@ -217,8 +250,12 @@ final class TaintSolver {
     return sinkParams.get(m);
   }
 
-  private static boolean accepted(String kind, String label) {
-    return "SIZE".equals(kind) ? numeric(label) : !numeric(label);
+  private boolean accepted(String kind, String label) {
+    if ("HEADER".equals(kind) && s.options().referenceParity()) {
+      // a login time or other number put into a cookie
+      return true;
+    }
+    return "SIZE".equals(kind) || "SIZECMP".equals(kind) ? numeric(label) : !numeric(label);
   }
 
   private void report(Sink sink, ClassFacts where, Set<String> labels, String passedAt) {
@@ -241,6 +278,13 @@ final class TaintSolver {
   }
 
   private String rule(String sinkKind, String sourceKind) {
+    boolean parity = s.options().referenceParity();
+    if ("SIZECMP".equals(sinkKind)) {
+      return parity && UNTRUSTED.contains(sourceKind) ? "TaintedSize" : null;
+    }
+    if ("PARSED".equals(sourceKind)) {
+      return parity && "SIZE".equals(sinkKind) ? "TaintedSize" : null;
+    }
     if ("SECRET".equals(sourceKind)) {
       return Set.of("LOG", "LOGARG", "STDOUT", "EXCEPTION").contains(sinkKind) ? "SecretLeak" : null;
     }
@@ -292,6 +336,7 @@ final class TaintSolver {
       case "FILE" -> "file content";
       case "DESER" -> "deserialized data";
       case "DATA" -> "binary or text input";
+      case "PARSED" -> "a parsed number";
       case "CONFIG" -> "configuration";
       case "SECRET" -> "a secret";
       default -> kind;
@@ -311,6 +356,7 @@ final class TaintSolver {
       case "EXPRESSION" -> "Evaluated expression";
       case "FORMAT" -> "Format string";
       case "SIZE" -> capitalize(sink.api());
+      case "SIZECMP" -> "Bound check";
       case "DECISION" -> "Security decision";
       default -> sink.kind();
     };
