@@ -44,7 +44,7 @@ import org.sonar.api.config.Configuration;
 public class ProjectSummaries implements Supplier<Summaries> {
 
   private static final Logger LOG = LoggerFactory.getLogger(ProjectSummaries.class);
-  private static final int CACHE_FORMAT = 9;
+  private static final int CACHE_FORMAT = 10;
   private static final Set<String> SKIP_DIRS = Set.of(".git", "node_modules", "src", ".scannerwork", ".gradle", ".idea");
 
   private final Configuration config;

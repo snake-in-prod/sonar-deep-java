@@ -597,10 +597,12 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>DivisionByPossibleZero</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>EmptyMapLookup</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>GuardedByViolation</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>IgnoredResultStatistical</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>InconsistentLocking</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>IndexCheckedAfterUse</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>LockNotReleasedAcrossMethods</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>LockOrderCycle</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>LombokUnreachableCode</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>LoopCounterOverflow</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>MixedLocks</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>NarrowingCastOverflow</key></rule>
@@ -612,6 +614,7 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>NullReturnDereference</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>OffByOneLoopBound</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>RegexFlagsUseless</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>RegexPitfall</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>ResourceClosedTwice</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>ResourceFromHelperNotClosed</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>ResourceUsedAfterClose</key></rule>
@@ -635,6 +638,8 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>TernaryPrecedence</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TimingUnsafeSecretComparison</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>UnboundedAuthRetry</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>UncheckedExceptionInEntryPoint</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>UnreachableCatch</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>UnrelatedKeyType</key></rule>
   </rules>
 </profile>

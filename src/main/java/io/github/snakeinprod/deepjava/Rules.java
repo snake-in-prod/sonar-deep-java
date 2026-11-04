@@ -223,6 +223,12 @@ public final class Rules {
       "A map field is created empty and never filled, so <code>containsKey</code> is always false and <code>get</code> always null.",
       "private final Map<String, User> users = new HashMap<>();\nif (users.containsKey(id)) { ... } // Noncompliant",
       s -> new FindingChecks.EmptyMapLookup(s)),
+    bug(FindingChecks.LombokUnreachable.KEY, "Lombok-generated members should not test @NonNull values for null", cwe(561),
+      "Only with <code>sonar.deepjava.referenceParity=true</code>, as whole-program analyzers report it: a member that Lombok "
+        + "generates for <code>@Data</code>, <code>@Value</code>, <code>@Builder</code> or <code>@NonNull</code> compares a value "
+        + "declared <code>@NonNull</code> with null, so that branch is unreachable. Reported on the annotation line.",
+      "@Data // Noncompliant: the generated equals() tests the @NonNull \"name\" for null\nclass User {\n  @NonNull private String name;\n}",
+      s -> new FindingChecks.LombokUnreachable(s)),
     // 9. smaller rules
     bug(TernaryPrecedenceCheck.KEY, "Ternary operators should be parenthesized when mixed with arithmetic", cwe(783),
       "In <code>x == y ? 1 : 0 + z</code> the <code>+ z</code> belongs to the false branch only, which is rarely intended.",

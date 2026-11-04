@@ -498,6 +498,7 @@ public final class BytecodeScanner implements Opcodes {
     private final Set<Integer> anyDeref = new HashSet<>();
     private final Set<Integer> nullCompared = new HashSet<>();
     private final Map<Integer, String> keyUses = new HashMap<>();
+    private final Map<Integer, String> nonNullChecks = new HashMap<>();
     private final Map<String, Set<String>> fieldCalls = new HashMap<>();
     private final Map<String, String> fieldInits = new HashMap<>();
     // locks
@@ -702,7 +703,7 @@ public final class BytecodeScanner implements Opcodes {
       UseFacts uses = new UseFacts(Map.copyOf(callSites), Map.copyOf(checks), Map.copyOf(valueSites), Map.copyOf(ignored),
         Set.copyOf(derefShifted), Set.copyOf(closedShifted), callsSuper, Map.copyOf(staticWrites), Set.copyOf(fieldWrites),
         Set.copyOf(fieldEscapes), Map.copyOf(fieldCalls), Map.copyOf(fieldInits), Set.copyOf(enumLoads), Map.copyOf(switchMapLoads),
-        Set.copyOf(indexShifted), Set.copyOf(maybeShifted), Map.copyOf(keyShifted));
+        Set.copyOf(indexShifted), Set.copyOf(maybeShifted), Map.copyOf(keyShifted), Map.copyOf(nonNullChecks));
       LockFacts lockFacts = new LockFacts(List.copyOf(accesses), List.copyOf(edges), List.copyOf(lockedCalls), Map.copyOf(acquired),
         Set.copyOf(heldAtReturn), Map.copyOf(reacquired));
       calls.addAll(lambdaRefs);
@@ -713,6 +714,46 @@ public final class BytecodeScanner implements Opcodes {
     private final List<ThrowSite> throwSites = new ArrayList<>();
     private final Set<CallSite> lambdaRefs = new LinkedHashSet<>();
     private final Set<Integer> throwSeen = new HashSet<>();
+
+    /**
+     * Name of a value annotated non-null: a parameter, a field of this class, or the result of this class's plain
+     * getter of such a field ({@code this.getName()} in a Lombok {@code equals}). Null otherwise.
+     */
+    private String nonNullName(V v) {
+      if (v.local() >= firstParam && v.local() < paramEnd && !reassigned.contains(v.local())) {
+        int p = paramIndex(v.local());
+        for (List<AnnotationNode>[] all : java.util.Arrays.<List<AnnotationNode>[]>asList(m.visibleParameterAnnotations, m.invisibleParameterAnnotations)) {
+          if (all != null && p >= 0 && p < all.length && isNonNull(annotations(all[p], null))) {
+            List<String> names = paramNames(m);
+            return p < names.size() && !names.get(p).isEmpty() ? names.get(p) : "parameter " + (p + 1);
+          }
+        }
+      }
+      String field = v.origin() != null && v.origin().startsWith("field:" + cn.name + "#") ? v.origin().substring(v.origin().indexOf('#') + 1) : null;
+      if (field == null && v.calls().size() == 1) {
+        Summaries.Call c = Summaries.parse(v.calls().iterator().next());
+        if (c.owner().equals(cn.name)) {
+          for (MethodNode g : cn.methods) {
+            String gf = (g.name + g.desc).equals(c.nameDesc()) ? plainGetterField(g) : null;
+            if (gf != null && gf.startsWith(cn.name + "#")) {
+              field = gf.substring(gf.indexOf('#') + 1);
+            }
+          }
+        }
+      }
+      if (field != null) {
+        for (FieldNode fn : cn.fields) {
+          if (fn.name.equals(field) && isNonNull(annotations(fn.visibleAnnotations, fn.invisibleAnnotations))) {
+            return field;
+          }
+        }
+      }
+      return null;
+    }
+
+    private static boolean isNonNull(Map<String, String> annotations) {
+      return annotations.containsKey("NonNull") || annotations.containsKey("Nonnull") || annotations.containsKey("NotNull");
+    }
 
     /** Local slot to parameter index (0-based, without {@code this}). */
     private int paramIndex(int slot) {
@@ -963,6 +1004,14 @@ public final class BytecodeScanner implements Opcodes {
         indexUses.add(f.getStack(sp - argc).local());
       }
 
+      // null tests of values declared non-null
+      if (op == IFNULL || op == IFNONNULL || op == IF_ACMPEQ || op == IF_ACMPNE) {
+        V tested = op == IFNULL || op == IFNONNULL ? top : top.isNullConstant() ? second : second.isNullConstant() ? top : null;
+        String nonNull = tested == null ? null : nonNullName(tested);
+        if (nonNull != null) {
+          nonNullChecks.putIfAbsent(lines[i], nonNull);
+        }
+      }
       // null tests feeding call-site statistics
       if (op == IFNULL || op == IFNONNULL) {
         recordNullCheck(top, i);

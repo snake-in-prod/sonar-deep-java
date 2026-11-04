@@ -37,6 +37,7 @@ final class ProjectAnalyses implements Opcodes {
   static final String CODE_AFTER_THROW = "CodeAfterAlwaysThrows";
   static final String DEAD_ENUM_CASE = "DeadEnumCase";
   static final String EMPTY_MAP = "EmptyMapLookup";
+  static final String LOMBOK_UNREACHABLE = "LombokUnreachableCode";
 
   private static final Set<String> ENTRY_ANNOTATIONS = Set.of("Scheduled", "Async", "KafkaListener", "RabbitListener",
     "JmsListener", "EventListener", "SqsListener", "StreamListener");
@@ -85,8 +86,27 @@ final class ProjectAnalyses implements Opcodes {
     codeAfterThrow();
     deadEnumCases();
     emptyMaps();
+    if (s.options().referenceParity()) {
+      lombokUnreachable();
+    }
     all.addAll(out.values());
     return all;
+  }
+
+  /**
+   * Generated members (Lombok included, which the other analyses skip) that test a {@code @NonNull} value for null:
+   * the null branch cannot run. The check keeps only lines that carry the Lombok annotation.
+   */
+  private void lombokUnreachable() {
+    for (ClassFacts c : s.classes().values()) {
+      c.methods().forEach((nd, f) -> f.uses().nonNullChecks().forEach((line, name) -> add(LOMBOK_UNREACHABLE, c, line,
+        "The generated \"" + displayMember(c, nd) + "\" tests the @NonNull \"" + name + "\" for null: that branch is unreachable.")));
+    }
+  }
+
+  private static String displayMember(ClassFacts c, String nameDesc) {
+    String name = nameDesc.substring(0, nameDesc.indexOf('('));
+    return "<init>".equals(name) ? Summaries.simpleName(c.name()) + "()" : name + "()";
   }
 
   private void add(String rule, ClassFacts c, int line, String message) {

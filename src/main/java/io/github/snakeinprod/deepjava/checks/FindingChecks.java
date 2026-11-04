@@ -1,6 +1,7 @@
 package io.github.snakeinprod.deepjava.checks;
 
 import io.github.snakeinprod.deepjava.prepass.Summaries;
+import java.util.List;
 import java.util.function.Supplier;
 import org.sonar.check.Rule;
 
@@ -133,6 +134,23 @@ public final class FindingChecks {
 
     public EmptyMapLookup(Supplier<Summaries> s) {
       super(s);
+    }
+  }
+
+  /** Parity mode only: unreachable null branches in Lombok-generated members, reported on the annotation line. */
+  @Rule(key = LombokUnreachable.KEY)
+  public static final class LombokUnreachable extends FindingCheck {
+    public static final String KEY = "LombokUnreachableCode";
+    private static final java.util.regex.Pattern LOMBOK = java.util.regex.Pattern.compile("@(lombok\\.)?(Data|Value|NonNull|Builder)\\b");
+
+    public LombokUnreachable(Supplier<Summaries> s) {
+      super(s);
+    }
+
+    @Override
+    protected boolean accept(Summaries.Finding f) {
+      List<String> lines = context.getFileLines();
+      return f.line() <= lines.size() && LOMBOK.matcher(lines.get(f.line() - 1)).find();
     }
   }
 }

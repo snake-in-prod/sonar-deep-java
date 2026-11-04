@@ -32,8 +32,15 @@ public abstract class FindingCheck extends IssuableSubscriptionVisitor {
     String path = pkg + context.getInputFile().filename();
     String key = getClass().getAnnotation(Rule.class).key();
     for (Summaries.Finding f : summaries.get().findings(key, path)) {
-      addIssue(f.line(), f.message());
+      if (accept(f)) {
+        addIssue(f.line(), f.message());
+      }
     }
+  }
+
+  /** Whether to report a finding on this file (subclasses filter by source text). */
+  protected boolean accept(Summaries.Finding f) {
+    return true;
   }
 
   static String name(ExpressionTree e) {
