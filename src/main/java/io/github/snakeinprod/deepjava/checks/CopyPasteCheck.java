@@ -61,7 +61,7 @@ public class CopyPasteCheck extends DeepCheck {
     Tree other = ifs.elseStatement() instanceof org.sonar.plugins.java.api.tree.IfStatementTree elseIf ? elseIf.thenStatement() : ifs.elseStatement();
     String a = text(ifs.thenStatement());
     String b = text(other);
-    if (a == null || b == null || a.equals(b) || a.length() < 20) {
+    if (a == null || b == null || a.equals(b) || a.length() < 20 || a.length() > MAX_TEXT || b.length() > MAX_TEXT) {
       return;
     }
     int pre = 0;
@@ -115,8 +115,13 @@ public class CopyPasteCheck extends DeepCheck {
   private void renamedPairs(BlockTree block) {
     List<StatementTree> body = block.body();
     for (int i = 1; i < body.size(); i++) {
-      List<String> a = tokens(text(body.get(i - 1)));
-      List<String> b = tokens(text(body.get(i)));
+      String ta = text(body.get(i - 1));
+      String tb = text(body.get(i));
+      if (ta.length() > MAX_TEXT || tb.length() > MAX_TEXT) {
+        continue;
+      }
+      List<String> a = tokens(ta);
+      List<String> b = tokens(tb);
       if (a.size() != b.size() || a.size() < 4) {
         continue;
       }
@@ -146,13 +151,39 @@ public class CopyPasteCheck extends DeepCheck {
     }
   }
 
-  private static final java.util.regex.Pattern TOKEN = java.util.regex.Pattern.compile("\"(?:\\\\.|[^\"\\\\])*\"|[A-Za-z_$][A-Za-z0-9_$]*|\\d+|\\S");
+  /** Longer statements are data (an embedded document, a generated table), never a renamed copy. */
+  private static final int MAX_TEXT = 2000;
 
-  private static List<String> tokens(String text) {
+  /** Literals, names, numbers and single characters; a plain scan, no regex (an 8,000-character literal is fine). */
+  static List<String> tokens(String text) {
     List<String> out = new ArrayList<>();
-    java.util.regex.Matcher m = TOKEN.matcher(text);
-    while (m.find()) {
-      out.add(m.group());
+    int i = 0;
+    int n = text.length();
+    while (i < n) {
+      char c = text.charAt(i);
+      int start = i;
+      if (Character.isWhitespace(c)) {
+        i++;
+        continue;
+      }
+      if (c == '"' || c == '\'') {
+        i++;
+        while (i < n && text.charAt(i) != c) {
+          i += text.charAt(i) == '\\' ? 2 : 1;
+        }
+        i = Math.min(n, i + 1);
+      } else if (Character.isJavaIdentifierStart(c)) {
+        while (i < n && Character.isJavaIdentifierPart(text.charAt(i))) {
+          i++;
+        }
+      } else if (Character.isDigit(c)) {
+        while (i < n && Character.isLetterOrDigit(text.charAt(i))) {
+          i++;
+        }
+      } else {
+        i++;
+      }
+      out.add(text.substring(start, i));
     }
     return out;
   }
@@ -168,11 +199,11 @@ public class CopyPasteCheck extends DeepCheck {
   @Override
   public void visitNode(Tree tree) {
     if (tree instanceof BlockTree block && summaries.get().options().referenceParity()) {
-      renamedPairs(block);
+      guarded(block, () -> renamedPairs(block));
     }
     if (tree instanceof org.sonar.plugins.java.api.tree.IfStatementTree ifs) {
       if (summaries.get().options().referenceParity()) {
-        branches(ifs);
+        guarded(ifs, () -> branches(ifs));
       }
       return;
     }

@@ -29,7 +29,10 @@ public class RegexFlagsCheck extends DeepCheck {
 
   @Override
   public void visitNode(Tree tree) {
-    MethodInvocationTree mit = (MethodInvocationTree) tree;
+    guarded(tree, () -> check((MethodInvocationTree) tree));
+  }
+
+  private void check(MethodInvocationTree mit) {
     if (!Trees.isCall(mit, "java.util.regex.Pattern", "compile") || mit.arguments().size() != 2) {
       return;
     }

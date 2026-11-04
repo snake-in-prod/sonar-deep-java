@@ -24,7 +24,7 @@ public class RegexPitfallCheck extends DeepCheck {
   /** One element in a class: a shorthand ({@code \d}) or an ordinary character; {@code [.]} is a common way to escape. */
   private static final Pattern SINGLE_CLASS = Pattern.compile("(?<!\\\\)\\[(\\\\[dDwWsS]|[^\\]\\\\^.$*+?|(){}\\[-])\\]");
   /** {@code (a|b)}, {@code (^|-)}: every alternative is one character or anchor. */
-  private static final Pattern SINGLE_ALTERNATIVES = Pattern.compile("(?<!\\\\)\\((\\?:)?(\\\\.|[^|()\\\\])(\\|(\\\\.|[^|()\\\\]))+\\)");
+  private static final Pattern SINGLE_ALTERNATIVES = Pattern.compile("(?<!\\\\)\\((\\?:)?+(\\\\.|[^|()\\\\])(\\|(?:\\\\.|[^|()\\\\]))++\\)");
 
   public RegexPitfallCheck(Supplier<Summaries> summaries) {
     super(summaries);
@@ -37,7 +37,10 @@ public class RegexPitfallCheck extends DeepCheck {
 
   @Override
   public void visitNode(Tree tree) {
-    MethodInvocationTree mit = (MethodInvocationTree) tree;
+    guarded(tree, () -> check((MethodInvocationTree) tree));
+  }
+
+  private void check(MethodInvocationTree mit) {
     boolean onString = Trees.isCall(mit, "java.lang.String", STRING_REGEX.toArray(String[]::new));
     if (!onString && !Trees.isCall(mit, "java.util.regex.Pattern", "compile", "matches") || mit.arguments().isEmpty()) {
       return;

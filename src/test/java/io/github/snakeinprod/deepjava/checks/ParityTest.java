@@ -85,6 +85,12 @@ class ParityTest {
     verify("src/test/files/parity/Unclosed.java", s -> new ResourceFromHelperCheck(() -> s));
   }
 
+  @Test
+  void statement_tokens_of_a_huge_literal() {
+    String literal = "\"" + "<a href=\\\"x\\\">\\n".repeat(2_000) + "\"";
+    org.assertj.core.api.Assertions.assertThat(CopyPasteCheck.tokens("m.put(\"k\", " + literal + ");")).hasSize(9);
+  }
+
   private void verify(String file, java.util.function.Function<Summaries, JavaFileScanner> check) throws Exception {
     Summaries summaries = TestSummaries.compile(Summaries.Thresholds.DEFAULT, TestSummaries.optionsFor(file), classes, file);
     CheckVerifier.newVerifier()
