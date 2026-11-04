@@ -69,7 +69,68 @@
     "java/net/HttpURLConnection#getInputStream": "NET",
     "java/io/FileInputStream#<init>": "FILE",
     "java/io/FileReader#<init>": "FILE",
-    "java/lang/System#in": "CMDLINE"
+    "java/lang/System#in": "CMDLINE",
+    "java/nio/ByteBuffer#get": "DATA",
+    "java/nio/ByteBuffer#getShort": "DATA",
+    "java/nio/ByteBuffer#getInt": "DATA",
+    "java/nio/ByteBuffer#getLong": "DATA",
+    "java/nio/ByteBuffer#getChar": "DATA",
+    "java/io/DataInput#readInt": "DATA",
+    "java/io/DataInput#readShort": "DATA",
+    "java/io/DataInput#readUnsignedShort": "DATA",
+    "java/io/DataInput#readByte": "DATA",
+    "java/io/DataInput#readUnsignedByte": "DATA",
+    "java/io/DataInput#readLong": "DATA",
+    "java/io/DataInput#readChar": "DATA",
+    "java/io/DataInputStream#readInt": "DATA",
+    "java/io/DataInputStream#readShort": "DATA",
+    "java/io/DataInputStream#readUnsignedShort": "DATA",
+    "java/io/DataInputStream#readByte": "DATA",
+    "java/io/DataInputStream#readUnsignedByte": "DATA",
+    "java/io/DataInputStream#readLong": "DATA",
+    "java/io/DataInputStream#readChar": "DATA",
+    "java/io/ObjectInput#readInt": "DATA",
+    "java/io/ObjectInput#readShort": "DATA",
+    "java/io/ObjectInput#readUnsignedShort": "DATA",
+    "java/io/ObjectInput#readByte": "DATA",
+    "java/io/ObjectInput#readUnsignedByte": "DATA",
+    "java/io/ObjectInput#readLong": "DATA",
+    "java/io/ObjectInput#readChar": "DATA",
+    "java/io/ObjectInputStream#readInt": "DATA",
+    "java/io/ObjectInputStream#readShort": "DATA",
+    "java/io/ObjectInputStream#readUnsignedShort": "DATA",
+    "java/io/ObjectInputStream#readByte": "DATA",
+    "java/io/ObjectInputStream#readUnsignedByte": "DATA",
+    "java/io/ObjectInputStream#readLong": "DATA",
+    "java/io/ObjectInputStream#readChar": "DATA",
+    "java/io/RandomAccessFile#readInt": "DATA",
+    "java/io/RandomAccessFile#readShort": "DATA",
+    "java/io/RandomAccessFile#readUnsignedShort": "DATA",
+    "java/io/RandomAccessFile#readByte": "DATA",
+    "java/io/RandomAccessFile#readUnsignedByte": "DATA",
+    "java/io/RandomAccessFile#readLong": "DATA",
+    "java/io/RandomAccessFile#readChar": "DATA",
+    "java/io/InputStream#read": "DATA",
+    "java/io/FileInputStream#read": "DATA",
+    "java/io/BufferedInputStream#read": "DATA",
+    "java/io/ByteArrayInputStream#read": "DATA",
+    "java/io/Reader#read": "DATA",
+    "java/io/BufferedReader#readLine": "DATA",
+    "java/io/LineNumberReader#readLine": "DATA",
+    "java/util/Scanner#next": "DATA",
+    "java/util/Scanner#nextLine": "DATA",
+    "java/util/Scanner#nextInt": "DATA",
+    "java/util/Scanner#nextLong": "DATA",
+    "com/opencsv/CSVReader#readNext": "DATA",
+    "org/apache/commons/csv/CSVRecord#get": "DATA",
+    "org/apache/avro/io/DatumReader#read": "DATA",
+    "org/apache/avro/specific/SpecificDatumReader#read": "DATA",
+    "org/apache/avro/generic/GenericDatumReader#read": "DATA",
+    "org/apache/avro/generic/GenericRecord#get": "DATA",
+    "org/apache/kafka/clients/consumer/ConsumerRecord#value": "MSG",
+    "org/apache/kafka/clients/consumer/ConsumerRecord#key": "MSG",
+    "org/springframework/core/env/Environment#getProperty": "CONFIG",
+    "org/springframework/core/env/PropertyResolver#getProperty": "CONFIG"
   },
   "sourceParameterAnnotations": {
     "RequestParam": "USER",
@@ -421,7 +482,9 @@
     "org/slf4j/Logger#trace": {
       "kind": "LOG",
       "args": [
-        0,
+        0
+      ],
+      "parameterArgs": [
         1,
         2,
         3
@@ -430,7 +493,9 @@
     "org/slf4j/Logger#debug": {
       "kind": "LOG",
       "args": [
-        0,
+        0
+      ],
+      "parameterArgs": [
         1,
         2,
         3
@@ -439,7 +504,9 @@
     "org/slf4j/Logger#info": {
       "kind": "LOG",
       "args": [
-        0,
+        0
+      ],
+      "parameterArgs": [
         1,
         2,
         3
@@ -448,7 +515,9 @@
     "org/slf4j/Logger#warn": {
       "kind": "LOG",
       "args": [
-        0,
+        0
+      ],
+      "parameterArgs": [
         1,
         2,
         3
@@ -457,7 +526,9 @@
     "org/slf4j/Logger#error": {
       "kind": "LOG",
       "args": [
-        0,
+        0
+      ],
+      "parameterArgs": [
         1,
         2,
         3
@@ -466,7 +537,9 @@
     "org/apache/logging/log4j/Logger#trace": {
       "kind": "LOG",
       "args": [
-        0,
+        0
+      ],
+      "parameterArgs": [
         1,
         2,
         3
@@ -475,7 +548,9 @@
     "org/apache/logging/log4j/Logger#debug": {
       "kind": "LOG",
       "args": [
-        0,
+        0
+      ],
+      "parameterArgs": [
         1,
         2,
         3
@@ -484,7 +559,9 @@
     "org/apache/logging/log4j/Logger#info": {
       "kind": "LOG",
       "args": [
-        0,
+        0
+      ],
+      "parameterArgs": [
         1,
         2,
         3
@@ -493,7 +570,9 @@
     "org/apache/logging/log4j/Logger#warn": {
       "kind": "LOG",
       "args": [
-        0,
+        0
+      ],
+      "parameterArgs": [
         1,
         2,
         3
@@ -502,7 +581,9 @@
     "org/apache/logging/log4j/Logger#error": {
       "kind": "LOG",
       "args": [
-        0,
+        0
+      ],
+      "parameterArgs": [
         1,
         2,
         3
@@ -559,7 +640,9 @@
     "java/util/logging/Logger#log": {
       "kind": "LOG",
       "args": [
-        1,
+        1
+      ],
+      "parameterArgs": [
         2
       ]
     },
@@ -932,5 +1015,8 @@
     "jakarta/servlet/http/Cookie#getName",
     "java/lang/String#length",
     "java/util/Collection#size"
-  ]
+  ],
+  "fieldSourceAnnotations": {
+    "Value": "CONFIG"
+  }
 }

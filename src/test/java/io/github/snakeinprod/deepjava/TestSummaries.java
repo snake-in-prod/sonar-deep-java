@@ -25,7 +25,15 @@ public final class TestSummaries {
 
   public static Summaries compile(Summaries.Thresholds thresholds, Path out, String... sources) throws Exception {
     JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-    List<String> args = new ArrayList<>(List.of("-g", "-proc:none", "-d", out.toString()));
+    List<String> args = new ArrayList<>(List.of("-g", "-d", out.toString()));
+    String lombok = java.util.Arrays.stream(System.getProperty("java.class.path").split(java.io.File.pathSeparator))
+      .filter(e -> e.contains("lombok")).findFirst().orElse(null);
+    boolean usesLombok = false;
+    for (String src : sources) {
+      usesLombok |= Files.readString(Path.of(src)).contains("lombok.");
+    }
+    // Lombok generates accessors that exist only in the bytecode, as in a real build
+    args.addAll(usesLombok && lombok != null ? List.of("-processorpath", lombok) : List.of("-proc:none"));
     args.addAll(List.of(sources));
     try (Stream<Path> stubs = Files.walk(Path.of("src/test/files/stubs"))) {
       stubs.filter(p -> p.toString().endsWith(".java")).forEach(p -> args.add(p.toString()));

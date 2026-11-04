@@ -72,7 +72,7 @@ class Client {
   }
 
   int localNull(Config c) {
-    return c.localNull(true).length(); // Noncompliant {{"Config.localNull()" can return null (Config.java:99); check the result before dereferencing it.}}
+    return c.localNull(true).length(); // Noncompliant {{"Config.localNull()" can return null (Config.java:99 returns a local set to null); check the result before dereferencing it.}}
   }
 
   int filledAtDeclaration(java.util.List<String> words) {

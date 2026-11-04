@@ -295,6 +295,24 @@ public final class TaintScanner implements Opcodes {
       return labels.stream().anyMatch(l -> l.startsWith("K")) ? mapGet(labels, null) : labels;
     }
 
+    /** Source kind of a field of this class annotated as a source (e.g. Spring {@code @Value}), or null. */
+    private String fieldSource(FieldInsnNode f) {
+      if (!f.owner.equals(cn.name)) {
+        return null;
+      }
+      for (org.objectweb.asm.tree.FieldNode fn : cn.fields) {
+        if (fn.name.equals(f.name)) {
+          for (String a : BytecodeScanner.annotations(fn.visibleAnnotations, fn.invisibleAnnotations).keySet()) {
+            String kind = models.fieldAnnotationSource(a);
+            if (kind != null) {
+              return kind;
+            }
+          }
+        }
+      }
+      return null;
+    }
+
     private void sink(String kind, Set<String> labels, String api) {
       labels = unkeyed(labels);
       if (!labels.isEmpty()) {
@@ -374,6 +392,10 @@ public final class TaintScanner implements Opcodes {
             FieldInsnNode f = (FieldInsnNode) insn;
             Type t = Type.getType(f.desc);
             Set<String> l = v.labels();
+            String annotated = fieldSource(f);
+            if (annotated != null) {
+              l = union(l, Set.of(source(annotated, "field \"" + f.name + "\"")));
+            }
             if (models.isSecretName(f.name) && isSecretType(t)) {
               l = union(l, Set.of(source("SECRET", "field \"" + f.name + "\"")));
             }
@@ -489,6 +511,14 @@ public final class TaintScanner implements Opcodes {
             l = Set.of();
           }
           sink(sink.kind(), l, display(mi.owner, mi.name));
+          Set<String> pl = Set.of();
+          for (int idx : sink.parameterArgs()) {
+            int v = idx + first;
+            if (v < values.size()) {
+              pl = union(pl, values.get(v).labels());
+            }
+          }
+          sink(sink.kind() + "ARG", pl, display(mi.owner, mi.name));
         }
         // only "new X(secret)": super(...) inside exception constructors would repeat the same flow
         if ("<init>".equals(mi.name) && mi.owner.matches(".*(Exception|Error)") && !argLabels.isEmpty()
@@ -515,7 +545,9 @@ public final class TaintScanner implements Opcodes {
         }
         String kind = models.source(mi.owner, mi.name);
         if (kind != null && !(kind.equals("SECRET") && !isSecretType(ret))) {
-          return new TV(ret.getSize(), Set.of(source(kind, display(mi.owner, mi.name))), -1, null);
+          // a source read from a tainted object keeps that taint too (readLine() of a socket reader)
+          Set<String> src = union(Set.of(source(kind, display(mi.owner, mi.name))), receiver == null ? Set.of() : receiver.labels());
+          return new TV(ret.getSize(), BytecodeScanner.isRef(ret) ? src : numeric(src), -1, null);
         }
         if (models.isSanitizer(mi.owner, mi.name) || isCrlfStrip(mi, values)) {
           return newValue(ret);

@@ -34,8 +34,6 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
 
   public static final String KEY = "NullReturnDereference";
 
-  private static final Set<String> NULLABLE_ANNOTATIONS = Set.of("Nullable", "CheckForNull", "NullableDecl");
-
   private final Supplier<Summaries> summaries;
 
   public NullReturnDereferenceCheck(Supplier<Summaries> summaries) {
@@ -51,23 +49,19 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
   public void visitNode(Tree tree) {
     MethodInvocationTree mit = (MethodInvocationTree) tree;
     Symbol.MethodSymbol sym = mit.methodSymbol();
-    if (sym.isUnknown() || isAnnotatedNullable(sym)) {
-      // annotated methods are sonar-java's S2259 territory
-      return;
-    }
-    String key = callKey(sym);
+    Summaries s = summaries.get();
+    String key = Trees.resolveCallKey(mit, s);
     if (key == null) {
       return;
     }
-    Summaries s = summaries.get();
     Optional<NullReason> reason = s.nullReturn(key);
     if (reason.isEmpty() || isGuarded(mit, reason.get().guards()) || !s.isReportable(key, reason.get())
-      || isStandardSystemProperty(sym, mit) || isNullCheckedElsewhere(mit)) {
+      || !sym.isUnknown() && isStandardSystemProperty(sym, mit) || isNullCheckedElsewhere(mit)) {
       return;
     }
     NullReason r = reason.get();
     Summaries.CallStats stats = s.callStats(key);
-    String evidence = !r.fromLibrary() && stats.checked() > 0 ?"; null-checked at " + stats.checked() + " of " + stats.sites() + " call sites" : "";
+    String evidence = !r.isStrong() && stats.checked() > 0 ?"; null-checked at " + stats.checked() + " of " + stats.sites() + " call sites" : "";
     String message = "\"" + r.method() + "\" can return null (" + r.detail() + evidence + "); check the result before dereferencing it.";
 
     Tree parent = skipParentheses(mit);
@@ -94,13 +88,8 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
     return BytecodeScanner.callKey(sym.isStatic() || sym.isPrivate(), owner, sym.name(), signature.substring(paren));
   }
 
-  private static boolean isAnnotatedNullable(Symbol sym) {
-    return sym.metadata().annotations().stream()
-      .anyMatch(a -> NULLABLE_ANNOTATIONS.contains(a.symbol().name()));
-  }
-
   /** Parent of {@code tree}, looking through parentheses and casts. */
-  private static Tree skipParentheses(Tree tree) {
+  static Tree skipParentheses(Tree tree) {
     Tree p = tree.parent();
     while (p != null && (p.is(Tree.Kind.PARENTHESIZED_EXPRESSION) || p.is(Tree.Kind.TYPE_CAST))) {
       p = p.parent();
@@ -108,7 +97,7 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
     return p;
   }
 
-  private static boolean isDereferenceOf(Tree parent, ExpressionTree value) {
+  static boolean isDereferenceOf(Tree parent, ExpressionTree value) {
     if (parent == null) {
       return false;
     }
@@ -139,7 +128,7 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
   }
 
   /** The first use of a never-reassigned local, if that use dereferences it. */
-  private static IdentifierTree firstUseIfDereference(Symbol var) {
+  static IdentifierTree firstUseIfDereference(Symbol var) {
     List<IdentifierTree> usages = new ArrayList<>(var.usages());
     if (usages.isEmpty()) {
       return null;
@@ -162,7 +151,7 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
    * For lookup-like library methods (models with guards): the key is computed, which usually means an invariant
    * the author knows, or a guard method (e.g. {@code containsKey}) is called on the same receiver in the same method.
    */
-  private static boolean isGuarded(MethodInvocationTree mit, Set<String> guards) {
+  static boolean isGuarded(MethodInvocationTree mit, Set<String> guards) {
     if (guards.isEmpty()) {
       return false;
     }
@@ -214,7 +203,7 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
   }
 
   /** The same call is compared with null in the same method: {@code key() == null ? 0 : key().limit()}. */
-  private static boolean isNullCheckedElsewhere(MethodInvocationTree mit) {
+  static boolean isNullCheckedElsewhere(MethodInvocationTree mit) {
     Tree method = mit;
     while (method != null && !method.is(Tree.Kind.METHOD, Tree.Kind.CONSTRUCTOR, Tree.Kind.LAMBDA_EXPRESSION)) {
       method = method.parent();
@@ -318,7 +307,7 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
   }
 
   private static List<JavaFileScannerContext.Location> declarationLocation(Symbol.MethodSymbol sym) {
-    MethodTree decl = sym.declaration();
+    MethodTree decl = sym.isUnknown() ? null : sym.declaration();
     return decl == null ? List.of() : List.of(new JavaFileScannerContext.Location("Can return null", decl.simpleName()));
   }
 }

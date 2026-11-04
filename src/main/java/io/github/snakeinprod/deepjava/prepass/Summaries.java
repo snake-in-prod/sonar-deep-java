@@ -23,15 +23,24 @@ public final class Summaries {
    * @param guards   method names that, called on the same receiver, make the result safe (library models)
    */
   public record NullReason(String method, String location, NullReason cause, Kind kind, Set<String> guards) {
-    public enum Kind { RETURNS_NULL, RETURNS_CALL, ANNOTATED, LIBRARY }
+    public enum Kind { RETURNS_NULL, RETURNS_CALL, ANNOTATED, LIBRARY, NULLABLE_FIELD, LOCAL_NULL }
 
     /** The null comes from a library model at the end of the chain (no call-site statistics needed). */
     public boolean fromLibrary() {
+      return root().kind() == Kind.LIBRARY;
+    }
+
+    public NullReason root() {
       NullReason r = this;
       while (r.cause() != null) {
         r = r.cause();
       }
-      return r.kind() == Kind.LIBRARY;
+      return r;
+    }
+
+    /** The null is declared (library model, annotation) or explicit ({@code x = null; ... return x;}). */
+    public boolean isStrong() {
+      return root().kind() != Kind.RETURNS_NULL;
     }
 
     /** e.g. {@code Config.java:4 via "Map.get()"}. */
@@ -39,6 +48,8 @@ public final class Summaries {
       StringBuilder sb = new StringBuilder(switch (kind) {
         case LIBRARY -> "library model";
         case ANNOTATED -> "annotated as nullable";
+        case NULLABLE_FIELD -> "returns the @Nullable field " + location;
+        case LOCAL_NULL -> location + " returns a local set to null";
         default -> location;
       });
       for (NullReason c = cause; c != null; c = c.cause()) {
@@ -128,12 +139,45 @@ public final class Summaries {
   private final Hierarchy hierarchy;
   private final LibraryModels models;
   private final Thresholds thresholds;
+  private final Nullable nullable;
   private final Map<String, Optional<NullReason>> memo = new HashMap<>();
   private final Map<String, Integer> callSites = new HashMap<>();
   private final Map<String, Integer> nullChecks = new HashMap<>();
   private Map<String, Map<String, List<Finding>>> findings;
 
+  /**
+   * Which annotations mark a nullable member: simple names match any package, qualified names one type;
+   * {@code ignored} lists qualified names to leave out (for example a schema hint such as Avro's).
+   */
+  public record Nullable(Set<String> annotations, Set<String> ignored) {
+    public static final Nullable DEFAULT = new Nullable(Set.of("Nullable", "CheckForNull", "NullableDecl"), Set.of());
+
+    public boolean matches(Map<String, String> present) {
+      if (present.keySet().stream().anyMatch(ignored::contains)) {
+        return false;
+      }
+      return present.keySet().stream().anyMatch(annotations::contains);
+    }
+  }
+
+  /**
+   * @param nullable           annotations that mark nullable members
+   * @param dataSources        integers read from binary or text input count as untrusted sizes
+   * @param logParametersSafe  parameterised log arguments ({@code log.info("x {}", v)}) are safe (the layout encodes CR/LF)
+   */
+  public record Options(Nullable nullable, boolean dataSources, boolean logParametersSafe) {
+    public static final Options DEFAULT = new Options(Nullable.DEFAULT, true, true);
+  }
+
+  private final Options options;
+
   public Summaries(Collection<ClassFacts> facts, Hierarchy hierarchy, LibraryModels models, Thresholds thresholds) {
+    this(facts, hierarchy, models, thresholds, Options.DEFAULT);
+  }
+
+  public Summaries(Collection<ClassFacts> facts, Hierarchy hierarchy, LibraryModels models, Thresholds thresholds, Options options) {
+    this.options = options;
+    this.nullable = options.nullable();
     this.classes = byName(facts);
     for (ClassFacts c : classes.values()) {
       if (c.superName() != null) {
@@ -166,6 +210,10 @@ public final class Summaries {
 
   public Thresholds thresholds() {
     return thresholds;
+  }
+
+  public Options options() {
+    return options;
   }
 
   public List<String> subtypes(String type) {
@@ -207,6 +255,29 @@ public final class Summaries {
     int hash = k.indexOf('#');
     int paren = k.indexOf('(', hash);
     return new Call(k.substring(0, hash), k.substring(hash + 1, paren), k.substring(paren), exact, knownLookup);
+  }
+
+  /**
+   * Call key of the project method {@code name} with {@code argc} arguments declared by {@code owner} or a
+   * superclass, when exactly one exists: for calls whose symbol the syntax tree cannot resolve, such as
+   * Lombok-generated getters, which exist only in the bytecode.
+   */
+  public String findMethod(String owner, String name, int argc) {
+    for (ClassFacts c = classes.get(owner); c != null; c = c.superName() == null ? null : classes.get(c.superName())) {
+      List<String> found = new ArrayList<>();
+      for (String nd : c.methods().keySet()) {
+        if (nd.startsWith(name + "(") && org.objectweb.asm.Type.getArgumentTypes(nd.substring(name.length())).length == argc) {
+          found.add(nd);
+        }
+      }
+      if (found.size() == 1) {
+        return BytecodeScanner.callKey(false, owner, name, found.get(0).substring(name.length()));
+      }
+      if (found.size() > 1) {
+        return null;
+      }
+    }
+    return null;
   }
 
   /** Project implementations a call can reach (class hierarchy analysis over project types). */
@@ -274,7 +345,7 @@ public final class Summaries {
    * project-rooted ones only when most call sites check the result.
    */
   public boolean isReportable(String callKey, NullReason reason) {
-    if (reason.fromLibrary()) {
+    if (reason.isStrong()) {
       return true;
     }
     CallStats s = callStats(callKey);
@@ -315,12 +386,23 @@ public final class Summaries {
         continue;
       }
       String display = display(cf.name(), c.name());
+      if (mf.nulls().localNullReturn() > 0) {
+        return new NullReason(display, location(cf, mf.nulls().localNullReturn()), null, NullReason.Kind.LOCAL_NULL, Set.of());
+      }
       Integer line = reachableNullReturn(mf);
       if (line != null) {
         return new NullReason(display, location(cf, line), null, NullReason.Kind.RETURNS_NULL, Set.of());
       }
-      if (mf.nulls().annotatedNullable()) {
+      if (mf.nulls().annotatedNullable() || nullable.matches(mf.info().annotations())) {
         return new NullReason(display, null, null, NullReason.Kind.ANNOTATED, Set.of());
+      }
+      for (String field : mf.nulls().returnedFields()) {
+        ClassFacts owner = classes.get(field.substring(0, field.indexOf('#')));
+        ClassFacts.FieldFacts ff = owner == null ? null : owner.fields().get(field.substring(field.indexOf('#') + 1));
+        if (ff != null && nullable.matches(ff.annotations())) {
+          return new NullReason(display, simpleName(owner.name()) + "." + field.substring(field.indexOf('#') + 1), null,
+            NullReason.Kind.NULLABLE_FIELD, Set.of());
+        }
       }
       List<Map.Entry<String, Integer>> calls = new ArrayList<>(mf.nulls().returnedCalls().entrySet());
       calls.sort(Map.Entry.comparingByValue());

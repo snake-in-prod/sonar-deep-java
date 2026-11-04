@@ -67,6 +67,9 @@ public final class BytecodeScanner implements Opcodes {
    */
   public static final String KNOWN_LOOKUP = "~";
 
+  /** Marker in {@code V.calls}: the value is a local that was explicitly assigned {@code null}. */
+  static final String EXPLICIT_NULL = "=null";
+
   private static final Set<String> NULL_TESTS = Set.of(
     "java/util/Objects#isNull", "java/util/Objects#nonNull", "java/util/Objects#requireNonNull",
     "java/util/Objects#requireNonNullElse", "java/util/Objects#requireNonNullElseGet", "java/util/Optional#ofNullable");
@@ -117,7 +120,7 @@ public final class BytecodeScanner implements Opcodes {
     boolean bodyless = m.instructions.size() == 0 || (m.access & (ACC_ABSTRACT | ACC_NATIVE)) != 0;
     boolean returnsNormally = bodyless || hasReturn(m);
     if (bodyless) {
-      NullFacts nulls = new NullFacts(hasNullableAnnotation(m), Map.of(), false, true, Map.of(), Set.of(), null, false, Set.of());
+      NullFacts nulls = new NullFacts(hasNullableAnnotation(m), Map.of(), false, true, Map.of(), Set.of(), null, false, Set.of(), Set.of(), -1);
       return new MethodFacts(info, nulls, UseFacts.EMPTY, LockFacts.EMPTY, ExFacts.EMPTY, ClassFacts.TaintFacts.EMPTY);
     }
     try {
@@ -143,6 +146,7 @@ public final class BytecodeScanner implements Opcodes {
           }
         }
         out.put(simpleName(a.desc), value);
+        out.put(a.desc.substring(1, a.desc.length() - 1).replace('/', '.'), value);
       }
     }
     return out;
@@ -238,7 +242,7 @@ public final class BytecodeScanner implements Opcodes {
     }
 
     boolean isNullConstant() {
-      return nullLit && calls.isEmpty();
+      return nullLit && (calls.isEmpty() || calls.size() == 1 && calls.contains(EXPLICIT_NULL));
     }
 
     boolean isConstant() {
@@ -309,6 +313,10 @@ public final class BytecodeScanner implements Opcodes {
     public V copyOperation(AbstractInsnNode insn, V v) {
       if (insn.getOpcode() == ALOAD) {
         return v.withLocal(((VarInsnNode) insn).var);
+      }
+      if (insn.getOpcode() == ASTORE && v.isNullConstant() && "null".equals(v.origin())) {
+        // an explicit "x = null": a strong sign the method means to return null on that path
+        return new V(1, true, Set.of(EXPLICIT_NULL), -1, "null");
       }
       if (insn.getOpcode() == ASTORE && v.local() != -1) {
         return v.withLocal(-1);
@@ -430,6 +438,8 @@ public final class BytecodeScanner implements Opcodes {
     private boolean nonConstantReturn;
     private boolean mayReturnMinusOne;
     private final Set<String> returnedNew = new HashSet<>();
+    private final Set<String> returnedFields = new HashSet<>();
+    private int localNullReturn = -1;
     // uses
     private final Set<String> nullChecks = new HashSet<>();
     private final Set<Integer> notDerefAtReturn = new HashSet<>();
@@ -618,7 +628,8 @@ public final class BytecodeScanner implements Opcodes {
 
       String constant = anyReturn && !nonConstantReturn && returnConstants.size() == 1 ? returnConstants.iterator().next() : null;
       NullFacts nulls = new NullFacts(annotated, Map.copyOf(nullReturns), anyReturn && onlyNull, returnsNormally,
-        Map.copyOf(returnedCalls), Set.copyOf(invoked), constant, mayReturnMinusOne, Set.copyOf(returnedNew));
+        Map.copyOf(returnedCalls), Set.copyOf(invoked), constant, mayReturnMinusOne, Set.copyOf(returnedNew), Set.copyOf(returnedFields),
+        localNullReturn);
       UseFacts uses = new UseFacts(Map.copyOf(callSites), Map.copyOf(checks), Map.copyOf(valueSites), Map.copyOf(ignored),
         Set.copyOf(derefShifted), Set.copyOf(closedShifted), callsSuper, Map.copyOf(staticWrites), Set.copyOf(fieldWrites),
         Set.copyOf(fieldEscapes), Map.copyOf(fieldCalls), Map.copyOf(fieldInits), Set.copyOf(enumLoads), Map.copyOf(switchMapLoads));
@@ -757,7 +768,9 @@ public final class BytecodeScanner implements Opcodes {
     private void recordNullCheck(V v, int insnIndex) {
       if (v != null) {
         for (String c : v.calls()) {
-          nullChecks.add(statKey(c) + "@" + insnIndex);
+          if (!EXPLICIT_NULL.equals(c)) {
+            nullChecks.add(statKey(c) + "@" + insnIndex);
+          }
         }
       }
     }
@@ -839,7 +852,16 @@ public final class BytecodeScanner implements Opcodes {
           });
         }
         for (String c : top.calls()) {
-          returnedCalls.putIfAbsent(c, lines[i]);
+          if (EXPLICIT_NULL.equals(c)) {
+            if (top.nullLit() && f.getLocal(flag).nullLit() && localNullReturn == -1) {
+              localNullReturn = lines[i];
+            }
+          } else {
+            returnedCalls.putIfAbsent(c, lines[i]);
+          }
+        }
+        if (top.origin() != null && top.origin().startsWith("field:")) {
+          returnedFields.add(top.origin().substring(6));
         }
         String created = createdType(top);
         if (created != null) {

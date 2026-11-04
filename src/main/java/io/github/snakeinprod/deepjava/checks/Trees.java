@@ -41,6 +41,22 @@ final class Trees {
     return BytecodeScanner.callKey(sym.isStatic() || sym.isPrivate() || "<init>".equals(sym.name()), owner, sym.name(), signature.substring(paren));
   }
 
+  /**
+   * Call key of an invocation; when the syntax tree cannot resolve the method (Lombok-generated accessors exist
+   * only in the bytecode), it is looked up by receiver type, name and argument count in the project's classes.
+   */
+  static String resolveCallKey(MethodInvocationTree mit, io.github.snakeinprod.deepjava.prepass.Summaries s) {
+    Symbol.MethodSymbol sym = mit.methodSymbol();
+    if (!sym.isUnknown()) {
+      return "<init>".equals(sym.name()) ? null : callKey(sym);
+    }
+    ExpressionTree r = receiver(mit);
+    if (r == null || r.symbolType().isUnknown()) {
+      return null;
+    }
+    return s.findMethod(r.symbolType().erasure().fullyQualifiedName().replace('.', '/'), name(mit), mit.arguments().size());
+  }
+
   static ExpressionTree skip(ExpressionTree e) {
     while (true) {
       if (e instanceof ParenthesizedTree p) {

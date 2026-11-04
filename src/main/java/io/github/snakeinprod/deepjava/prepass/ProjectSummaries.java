@@ -119,7 +119,11 @@ public class ProjectSummaries implements Supplier<Summaries> {
     scanned.putAll(used);
     writeCache(cacheFile, used);
 
-    Summaries s = new Summaries(byName.values(), new Hierarchy(byName, List.copyOf(libraries)), LibraryModels.load(models), thresholds);
+    Summaries s = new Summaries(byName.values(), new Hierarchy(byName, List.copyOf(libraries)), LibraryModels.load(models), thresholds,
+      new Summaries.Options(new Summaries.Nullable(config.getStringArray(DeepJavaPlugin.NULLABLE_ANNOTATIONS).length == 0
+        ? Summaries.Nullable.DEFAULT.annotations() : Set.of(config.getStringArray(DeepJavaPlugin.NULLABLE_ANNOTATIONS)),
+        Set.of(config.getStringArray(DeepJavaPlugin.NULLABLE_IGNORED))),
+        config.getBoolean(DeepJavaPlugin.DATA_SOURCES).orElse(true), config.getBoolean(DeepJavaPlugin.LOG_PARAMETERS_SAFE).orElse(true)));
     LOG.info("Deep Java pre-pass: {} classes ({} from cache) from {} directories/jars in {} ms",
       byName.size(), hits[0], binaries.size(), System.currentTimeMillis() - start);
     return s;

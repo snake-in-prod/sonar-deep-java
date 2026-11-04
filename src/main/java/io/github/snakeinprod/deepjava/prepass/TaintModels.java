@@ -31,13 +31,15 @@ import java.util.regex.Pattern;
  */
 public final class TaintModels {
 
-  public record SinkModel(String kind, List<Integer> args) {
+  /** @param parameterArgs arguments that are parameters of a message template (reported as kind + "ARG") */
+  public record SinkModel(String kind, List<Integer> args, List<Integer> parameterArgs) {
   }
 
   private static TaintModels defaults;
 
   private final Map<String, String> sources = new HashMap<>();
   private final Map<String, String> paramAnnotations = new HashMap<>();
+  private final Map<String, String> fieldAnnotations = new HashMap<>();
   private final Set<String> listenerAnnotations = new HashSet<>();
   private final Map<String, SinkModel> sinks = new HashMap<>();
   private final Map<String, String> propagators = new HashMap<>();
@@ -85,6 +87,9 @@ public final class TaintModels {
     if (json.has("sourceParameterAnnotations")) {
       json.getAsJsonObject("sourceParameterAnnotations").entrySet().forEach(e -> paramAnnotations.put(e.getKey(), e.getValue().getAsString()));
     }
+    if (json.has("fieldSourceAnnotations")) {
+      json.getAsJsonObject("fieldSourceAnnotations").entrySet().forEach(e -> fieldAnnotations.put(e.getKey(), e.getValue().getAsString()));
+    }
     if (json.has("listenerAnnotations")) {
       json.getAsJsonArray("listenerAnnotations").forEach(e -> listenerAnnotations.add(e.getAsString()));
     }
@@ -97,7 +102,11 @@ public final class TaintModels {
         List<Integer> args = new ArrayList<>();
         JsonArray a = o.getAsJsonArray("args");
         a.forEach(x -> args.add(x.getAsInt()));
-        sinks.put(e.getKey(), new SinkModel(o.get("kind").getAsString(), List.copyOf(args)));
+        List<Integer> params = new ArrayList<>();
+        if (o.has("parameterArgs")) {
+          o.getAsJsonArray("parameterArgs").forEach(x -> params.add(x.getAsInt()));
+        }
+        sinks.put(e.getKey(), new SinkModel(o.get("kind").getAsString(), List.copyOf(args), List.copyOf(params)));
       }
     }
     if (json.has("propagators")) {
@@ -149,6 +158,10 @@ public final class TaintModels {
   public boolean isSanitizer(String owner, String name) {
     String key = owner + "#" + name;
     return sanitizers.stream().anyMatch(p -> p.matcher(key).matches());
+  }
+
+  public String fieldAnnotationSource(String annotation) {
+    return fieldAnnotations.get(annotation);
   }
 
   public String parameterAnnotationSource(String annotation) {

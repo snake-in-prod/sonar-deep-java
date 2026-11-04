@@ -24,6 +24,25 @@ class NullReturnDereferenceCheckTest {
   }
 
   @Test
+  void nullable_annotations_and_lombok_getters() throws Exception {
+    verify("src/test/files/nullness/LombokNullable.java");
+  }
+
+  @Test
+  void explicit_local_null_through_delegation() throws Exception {
+    verify("src/test/files/nullness/LocalNullDelegation.java");
+  }
+
+  private void verify(String file) throws Exception {
+    Summaries summaries = TestSummaries.compile(Summaries.Thresholds.DEFAULT, classes, file);
+    CheckVerifier.newVerifier()
+      .onFile(file)
+      .withClassPath(List.of(classes.toFile()))
+      .withCheck(new NullReturnDereferenceCheck(() -> summaries))
+      .verifyIssues();
+  }
+
+  @Test
   void project_nulls_need_call_site_statistics() throws Exception {
     Summaries summaries = TestSummaries.compile(new Summaries.Thresholds(8, 5, 0.8), classes, "src/test/files/stats/Stats.java");
     CheckVerifier.newVerifier()

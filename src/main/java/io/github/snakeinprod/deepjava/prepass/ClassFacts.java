@@ -61,13 +61,15 @@ public record ClassFacts(String name, String superName, List<String> interfaces,
    * @param constantReturn    the single constant every return returns ({@code "I:0"}, {@code "S:text"}, {@code "null"}), or null
    * @param mayReturnMinusOne some path returns the int constant -1
    * @param returnedNew       types instantiated with {@code new} and returned
+   * @param returnedFields    fields (owner#name) whose value is returned as is (getters, Lombok included)
+   * @param localNullReturn   line of a return of a local explicitly set to {@code null} on some path, or -1
    */
   public record NullFacts(boolean annotatedNullable, Map<Integer, Set<String>> nullReturns, boolean onlyNull,
     boolean returnsNormally, Map<String, Integer> returnedCalls, Set<String> invokedNames, String constantReturn,
-    boolean mayReturnMinusOne, Set<String> returnedNew) implements Serializable {
+    boolean mayReturnMinusOne, Set<String> returnedNew, Set<String> returnedFields, int localNullReturn) implements Serializable {
 
     static NullFacts empty(boolean returnsNormally) {
-      return new NullFacts(false, Map.of(), false, returnsNormally, Map.of(), Set.of(), null, false, Set.of());
+      return new NullFacts(false, Map.of(), false, returnsNormally, Map.of(), Set.of(), null, false, Set.of(), Set.of(), -1);
     }
   }
 

@@ -80,6 +80,15 @@ public final class Rules {
     bug(DereferenceBeforeNullCheckCheck.KEY, "Values should not be compared to null after they were dereferenced", cwe(476),
       "A variable is dereferenced and compared to <code>null</code> later: either the check is dead or the dereference is the bug.",
       "int n = s.length();\nif (s == null) { return 0; } // Noncompliant", DereferenceBeforeNullCheckCheck::new),
+    bug(NullCheckedAtMostCallSitesCheck.KEY, "Results null-checked at most call sites should be checked here", cwe(476, 252),
+      "Callers of the method check its result for null at most call sites (default 80% of at least 5; 90% for plain getters), "
+        + "and this one dereferences it without a check.",
+      "String s = repo.find(id);   // checked for null at 7 of 8 call sites\nreturn s.length(); // Noncompliant",
+      NullCheckedAtMostCallSitesCheck::new),
+    bug(NullAssignedThenDereferencedCheck.KEY, "Variables set to null on one path should not be dereferenced after the paths join", cwe(476),
+      "A local variable is set to <code>null</code> in an <code>if</code>, <code>catch</code> or <code>switch</code> branch that does "
+        + "not leave the method, and is dereferenced after the branch without a check.",
+      "if (f == null || !f.isActive()) { f = null; }\nreturn f.getName(); // Noncompliant", NullAssignedThenDereferencedCheck::new),
     // 2. resources
     bug(ResourceFromHelperCheck.KEY, "Resources returned by helper methods should be closed", cwe(404, 772),
       "A method returns a new resource (stream, connection, statement...) and the caller neither closes it, returns it, stores "

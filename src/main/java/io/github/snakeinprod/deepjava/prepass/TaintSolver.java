@@ -20,7 +20,7 @@ import java.util.Set;
  */
 final class TaintSolver {
 
-  private static final Set<String> UNTRUSTED = Set.of("USER", "COOKIE", "JWT", "NET", "MSG", "CMDLINE", "ENV", "FILE", "DESER");
+  private static final Set<String> UNTRUSTED = Set.of("USER", "COOKIE", "JWT", "NET", "MSG", "CMDLINE", "ENV", "FILE", "DESER", "DATA", "CONFIG");
   private static final Set<String> REMOTE = Set.of("USER", "COOKIE", "JWT", "NET", "MSG");
 
   /** A parameter of a method reaches a sink (possibly in a callee). */
@@ -213,12 +213,22 @@ final class TaintSolver {
     }
   }
 
-  private static String rule(String sinkKind, String sourceKind) {
+  private String rule(String sinkKind, String sourceKind) {
     if ("SECRET".equals(sourceKind)) {
-      return Set.of("LOG", "STDOUT", "EXCEPTION").contains(sinkKind) ? "SecretLeak" : null;
+      return Set.of("LOG", "LOGARG", "STDOUT", "EXCEPTION").contains(sinkKind) ? "SecretLeak" : null;
     }
     if (!UNTRUSTED.contains(sourceKind)) {
       return null;
+    }
+    // binary/text input only says how big something is; configuration only matters for commands
+    if ("DATA".equals(sourceKind)) {
+      return "SIZE".equals(sinkKind) && s.options().dataSources() ? "TaintedSize" : null;
+    }
+    if ("CONFIG".equals(sourceKind)) {
+      return "COMMAND".equals(sinkKind) ? "TaintedCommand" : null;
+    }
+    if ("LOGARG".equals(sinkKind)) {
+      return !s.options().logParametersSafe() && REMOTE.contains(sourceKind) ? "TaintedLog" : null;
     }
     return switch (sinkKind) {
       case "SQL" -> "TaintedSql";
@@ -249,6 +259,8 @@ final class TaintSolver {
       case "CMDLINE" -> "the command line";
       case "FILE" -> "file content";
       case "DESER" -> "deserialized data";
+      case "DATA" -> "binary or text input";
+      case "CONFIG" -> "configuration";
       case "SECRET" -> "a secret";
       default -> kind;
     };
@@ -259,7 +271,7 @@ final class TaintSolver {
       case "SSRF" -> "Target of an outgoing connection";
       case "LDAP" -> "LDAP filter";
       case "XPATH" -> "XPath expression";
-      case "LOG" -> "Log message";
+      case "LOG", "LOGARG" -> "Log message";
       case "STDOUT" -> "Standard output";
       case "EXCEPTION" -> "Exception message";
       case "HEADER" -> "HTTP header";
