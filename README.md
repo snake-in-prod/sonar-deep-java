@@ -123,7 +123,7 @@ Full procedure with verification and rollback, written to be followed by a perso
 | `sonar.deepjava.nullableAnnotations.ignored` | none | Qualified names to ignore, e.g. `org.apache.avro.reflect.Nullable` |
 | `sonar.deepjava.taint.dataSources` | `true` | Integers read from buffers, streams, readers and parsers count as untrusted sizes, indexes and loop bounds |
 | `sonar.deepjava.taint.logParametersSafe` | `true` | `log.info("x {}", value)` is not log injection (the layout encodes CR/LF); only concatenation into the message is reported |
-| `sonar.deepjava.referenceParity` | `false` | Also report what whole-program reference analyzers report where Deep Java deliberately stays quiet: `Objects.requireNonNull` on a nullable value counts as a dereference, statistical null checks apply to getters at 80%, null-for-null mappers propagate through delegates, concurrent maps count for for-each modification, fields null-checked by Lombok `equals()` count as nullable, and `LombokUnreachableCode` reports. Use it to compare with such an analyzer |
+| `sonar.deepjava.referenceParity` | `false` | Also report what whole-program reference analyzers report where Deep Java deliberately stays quiet: `Objects.requireNonNull` on a nullable value counts as a dereference; statistical null checks apply to getters at 80%; null-for-null mappers and keyed lookups propagate through wrappers; dereferences in a later branch after a null assignment; Lombok-null-checked fields passed on; parsed numbers as size sources and their bound checks; parameters of public methods to file paths; numbers into cookies; same-key puts and concurrent maps in for-each; String keys in a generic `Map<K, V>`; copy-paste between `if`/`else` branches; `replaceFirst(".")`; and `LombokUnreachableCode`. Use it to compare with such an analyzer |
 
 ### Library models
 
@@ -222,27 +222,28 @@ the cases that cross methods.
 Mature libraries, analysed from their Maven Central class and source jars on SonarQube 26.10 with the default
 profile and `sonar.deepjava.referenceParity=false`. Every issue was reviewed by hand.
 
-| Project | Classes | Issues 0.3.0 | Issues 0.4.0 |
-|---|--:|--:|--:|
-| commons-lang3 3.21.0 | 439 | 1 | 3 |
-| commons-io 2.22.0 | 428 | 4 | 4 |
-| jackson-databind 2.22.4 | 813 | 2 | 3 |
-| kafka-clients 4.4.0 | 4345 | 21 | 34 |
+| Project | Classes | Issues 0.3.0 | Issues 0.4.0 | Issues 0.5.0 |
+|---|--:|--:|--:|--:|
+| commons-lang3 3.21.0 | 439 | 1 | 3 | 4 |
+| commons-io 2.22.0 | 428 | 4 | 4 | 4 |
+| jackson-databind 2.22.4 | 813 | 2 | 3 | 4 |
+| kafka-clients 4.4.0 | 4345 | 21 | 34 | 38 |
 
-By rule, 0.4.0:
+By rule, 0.5.0:
 
 | Rule | Issues | True positive | False positive | Not confirmed |
 |---|--:|--:|--:|--:|
 | `InconsistentLocking` | 13 | 5 | 0 | 8 |
 | `TaintedSize` | 12 | 0 | 0 | 12 |
-| `NullReturnDereference` | 7 | 1 | 6 | 0 |
-| `DivisionByPossibleZero` | 3 | 0 | 0 | 3 |
+| `NullReturnDereference` | 8 | 1 | 7 | 0 |
+| `NullCheckedAtMostCallSites` | 4 | 0 | 0 | 4 |
+| `DivisionByPossibleZero` | 4 | 0 | 0 | 4 |
 | `RegexPitfall` | 3 | 3 | 0 | 0 |
 | `NegativeIndexFromSearch` | 2 | 0 | 2 | 0 |
 | `UncheckedExceptionInEntryPoint` | 2 | 0 | 0 | 2 |
 | `NullPassedToDereferencedParameter` | 1 | 1 | 0 | 0 |
 | `SecretLeak` | 1 | 0 | 1 | 0 |
-| other 49 rules | 0 | | | |
+| other 48 rules | 0 | | | |
 
 - True positives: fields read or written without the lock that guards them everywhere else (in commons-io a
   `long` read without the lock is not even atomic), `null` passed to a Jackson method that dereferences that
@@ -256,10 +257,12 @@ By rule, 0.4.0:
   partition and consumer counts that Kafka's callers keep above 0; loop bounds, allocations and list sizes read from
   protocol buffers and varints (ADR 0002 F: an attacker-sized count, bounded only by the buffer); a
   `NumberFormatException` from parsing a broker address that can end a network thread.
-- What 0.4.0 added on these libraries comes from ADR 0002 groups C, F and H (null collections, protocol sizes,
-  regex, entry points); no other rule raises more than in 0.3.0.
+- What 0.4.0 and 0.5.0 added on these libraries comes from ADR 0002 groups A, B, C, F and H (null collections,
+  null checks now counted on repeated guarded calls, protocol sizes, regex, entry points, divisors passed to a callee);
+  no other rule raises more than in 0.3.0. 0.5.0 adds 4 `NullCheckedAtMostCallSites` (null-checked at 6 of 7, 4 of 5,
+  5 of 6 and 5 of 6 call sites), one more `getTypeArguments()` and a partition count passed to a dividing callee.
 
-The OWASP Benchmark scores are unchanged from 0.3.0.
+The OWASP Benchmark scores are unchanged from 0.3.0 (measured again on 0.5.0).
 
 The rules outside the default profile reported 9 issues on the same libraries, none of them a defect.
 Before the precision work, the first run of 0.1 reported 840 issues.

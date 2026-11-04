@@ -80,7 +80,9 @@ public final class BytecodeScanner implements Opcodes {
     "org/apache/commons/lang3/StringUtils#isNotBlank", "org/apache/commons/lang3/ObjectUtils#isEmpty",
     "org/apache/commons/lang3/ObjectUtils#isNotEmpty", "org/apache/commons/collections4/CollectionUtils#isEmpty",
     "org/apache/commons/collections4/CollectionUtils#isNotEmpty", "org/apache/commons/collections4/MapUtils#isEmpty",
-    "com/google/common/base/Strings#isNullOrEmpty");
+    "com/google/common/base/Strings#isNullOrEmpty", "org/apache/commons/lang3/StringUtils#length",
+    "org/apache/commons/lang3/StringUtils#defaultString", "org/apache/commons/lang3/StringUtils#trimToEmpty",
+    "java/util/Objects#toString", "java/lang/String#valueOf");
 
   private static final Set<String> KEY_LOOKUPS = Set.of("get", "containsKey", "remove", "getOrDefault");
 

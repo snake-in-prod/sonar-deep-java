@@ -86,7 +86,9 @@ public class NullAssignedThenDereferencedCheck extends DeepCheck {
         }
         continue;
       }
-      if (assignsOnEveryPath(st, var)) {
+      // a loop that assigns usually runs until it has (or leaves the method): parity mode only
+      if (assignsOnEveryPath(st, var) || st.is(Tree.Kind.FOR_STATEMENT, Tree.Kind.FOR_EACH_STATEMENT, Tree.Kind.WHILE_STATEMENT,
+        Tree.Kind.DO_STATEMENT) && !summaries.get().options().referenceParity()) {
         return;
       }
       checkAfter(body, assigned, j, var, Trees.line(v));
