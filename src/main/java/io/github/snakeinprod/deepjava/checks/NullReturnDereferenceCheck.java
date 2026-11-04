@@ -49,6 +49,7 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
   public void visitNode(Tree tree) {
     if (tree instanceof MethodTree method) {
       visitOverride(method);
+      nullableFields(method);
       return;
     }
     MethodInvocationTree mit = (MethodInvocationTree) tree;
@@ -66,7 +67,8 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
 
     boolean parity = s.options().referenceParity();
     Tree parent = skipParentheses(mit);
-    if (isDereferenceOf(parent, mit) || parity && isRequireNonNullArgument(parent, mit)) {
+    boolean boxed = Derefs.isBoxed(mit.symbolType()) || key.matches(".*\\)Ljava/lang/(Long|Integer|Short|Byte|Boolean|Double|Float|Character);");
+    if (Derefs.isDereference(parent, mit, boxed) || parity && isRequireNonNullArgument(parent, mit)) {
       reportIssue(Trees.methodName(mit), message, declarationLocation(sym), null);
     } else if (parent instanceof VariableTree v && isLocal(v.symbol())) {
       IdentifierTree use = firstUseIfDereference(v.symbol(), parity);
@@ -76,6 +78,52 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
         reportIssue(use, message, secondaries, null);
       }
     }
+  }
+
+  /** A field annotated nullable dereferenced in a method of its class before any null test in that method. */
+  private void nullableFields(MethodTree method) {
+    if (method.block() == null) {
+      return;
+    }
+    Summaries.Nullable nullable = summaries.get().options().nullable();
+    java.util.Set<Symbol> seen = new java.util.HashSet<>();
+    for (IdentifierTree id : Trees.collect(method.block(), IdentifierTree.class)) {
+      Symbol f = id.symbol();
+      if (!Trees.isField(f) || !seen.add(f) || f.isStatic() && f.isFinal() || !isNullable(f, nullable)) {
+        continue;
+      }
+      List<IdentifierTree> uses = new ArrayList<>(f.usages().stream().filter(u -> within(u, method)).toList());
+      uses.sort((a, b) -> a.identifierToken().range().start().compareTo(b.identifierToken().range().start()));
+      for (IdentifierTree u : uses) {
+        ExpressionTree value = u.parent() instanceof MemberSelectExpressionTree ms && ms.identifier() == u ? ms : u;
+        Tree p = Derefs.parent(value);
+        if (p instanceof AssignmentExpressionTree a && a.variable() == value || Derefs.isNullTest(p, value)) {
+          break;
+        }
+        if (Derefs.isDereference(p, value, Derefs.isBoxed(f.type()))) {
+          reportIssue(value, "\"" + f.name() + "\" is annotated nullable; check it before dereferencing it.");
+          break;
+        }
+      }
+    }
+  }
+
+  private static boolean within(Tree t, Tree ancestor) {
+    for (Tree p = t; p != null; p = p.parent()) {
+      if (p == ancestor) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean isNullable(Symbol f, Summaries.Nullable nullable) {
+    java.util.Map<String, String> names = new java.util.HashMap<>();
+    for (var a : f.metadata().annotations()) {
+      names.put(a.symbol().name(), "");
+      names.put(a.symbol().type().fullyQualifiedName(), "");
+    }
+    return nullable.matches(names);
   }
 
   /** Why the call's result can be null, when a dereference of it is reported by this rule. */
@@ -158,16 +206,7 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
   }
 
   static boolean isDereferenceOf(Tree parent, ExpressionTree value) {
-    if (parent == null) {
-      return false;
-    }
-    return switch (parent.kind()) {
-      case MEMBER_SELECT -> contains(((MemberSelectExpressionTree) parent).expression(), value);
-      case ARRAY_ACCESS_EXPRESSION -> contains(((org.sonar.plugins.java.api.tree.ArrayAccessExpressionTree) parent).expression(), value);
-      case FOR_EACH_STATEMENT -> contains(((org.sonar.plugins.java.api.tree.ForEachStatement) parent).expression(), value);
-      case SYNCHRONIZED_STATEMENT -> contains(((org.sonar.plugins.java.api.tree.SynchronizedStatementTree) parent).expression(), value);
-      default -> false;
-    };
+    return Derefs.isDereference(parent, value, Derefs.isBoxed(value.symbolType()));
   }
 
   /** {@code outer} is {@code inner}, possibly wrapped in parentheses and casts. */
@@ -191,25 +230,9 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
     return firstUseIfDereference(var, false);
   }
 
-  /** The first use of a never-reassigned local, if that use dereferences it (or, in parity mode, requires it non-null). */
+  /** The first dereference of a never-reassigned local before any null test (see {@link Derefs#firstDereference}). */
   static IdentifierTree firstUseIfDereference(Symbol var, boolean parity) {
-    List<IdentifierTree> usages = new ArrayList<>(var.usages());
-    if (usages.isEmpty()) {
-      return null;
-    }
-    for (IdentifierTree u : usages) {
-      if (u.parent() instanceof AssignmentExpressionTree a && a.variable() == u) {
-        return null;
-      }
-    }
-    usages.sort((a, b) -> {
-      var ta = a.identifierToken();
-      var tb = b.identifierToken();
-      return ta.range().start().compareTo(tb.range().start());
-    });
-    IdentifierTree first = usages.get(0);
-    Tree parent = skipParentheses(first);
-    return isDereferenceOf(parent, first) || parity && isRequireNonNullArgument(parent, first) ? first : null;
+    return Derefs.firstDereference(var, parity);
   }
 
   /**

@@ -395,13 +395,14 @@ public final class Summaries {
       if (mf.nulls().localNullReturn() > 0) {
         return new NullReason(display, location(cf, mf.nulls().localNullReturn()), null, NullReason.Kind.LOCAL_NULL, Set.of());
       }
+      // a declared nullable return is stronger evidence than a "return null" that needs call-site statistics
+      if (mf.nulls().annotatedNullable() || nullable.matches(mf.info().annotations()) || nullableByDefault(cf, mf.info().annotations())) {
+        return new NullReason(display, null, null, NullReason.Kind.ANNOTATED, Set.of());
+      }
       Integer line = reachableNullReturn(mf);
       if (line != null) {
         NullReason.Kind kind = returnsCollection(c.desc()) ? NullReason.Kind.COLLECTION_NULL : NullReason.Kind.RETURNS_NULL;
         return new NullReason(display, location(cf, line), null, kind, Set.of());
-      }
-      if (mf.nulls().annotatedNullable() || nullable.matches(mf.info().annotations()) || nullableByDefault(cf, mf.info().annotations())) {
-        return new NullReason(display, null, null, NullReason.Kind.ANNOTATED, Set.of());
       }
       if (isMapperImplementation(cf, c.desc(), mf.info().access())) {
         return new NullReason(display, null, null, NullReason.Kind.NULL_FOR_NULL_ARGUMENT, Set.of());

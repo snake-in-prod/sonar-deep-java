@@ -53,6 +53,11 @@ class NullReturnDereferenceCheckTest {
   }
 
   @Test
+  void implicit_dereferences() throws Exception {
+    verify("src/test/files/nullness/Implicit.java");
+  }
+
+  @Test
   void parity_counts_require_non_null() throws Exception {
     verify("src/test/files/nullness/ParityRequireNonNull.java");
   }
