@@ -26,6 +26,11 @@ public class TernaryPrecedenceCheck extends DeepCheck {
   @Override
   public void visitNode(Tree tree) {
     ConditionalExpressionTree c = (ConditionalExpressionTree) tree;
+    if (c.condition() instanceof BinaryExpressionTree cond && cond.is(Tree.Kind.EQUAL_TO, Tree.Kind.NOT_EQUAL_TO)
+      && (cond.leftOperand().is(Tree.Kind.PLUS, Tree.Kind.MINUS) || cond.rightOperand().is(Tree.Kind.PLUS, Tree.Kind.MINUS))
+      && c.trueExpression().asConstant().isPresent() && c.falseExpression().asConstant().isPresent()) {
+      reportIssue(cond, "Arithmetic, comparison and \"?:\" are mixed without parentheses; add them to show the intended order.");
+    }
     if (c.falseExpression() instanceof BinaryExpressionTree b && b.is(Tree.Kind.PLUS, Tree.Kind.MINUS, Tree.Kind.MULTIPLY)
       && b.leftOperand().is(Tree.Kind.INT_LITERAL, Tree.Kind.LONG_LITERAL) && c.trueExpression().is(Tree.Kind.INT_LITERAL, Tree.Kind.LONG_LITERAL)
       && !b.rightOperand().is(Tree.Kind.INT_LITERAL, Tree.Kind.LONG_LITERAL)) {

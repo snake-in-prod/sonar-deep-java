@@ -27,11 +27,15 @@ public class ModifiedInForEachCheck extends DeepCheck {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.FOR_EACH_STATEMENT);
+    return List.of(Tree.Kind.FOR_EACH_STATEMENT, Tree.Kind.METHOD_INVOCATION);
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if (tree instanceof MethodInvocationTree forEach) {
+      lambda(forEach);
+      return;
+    }
     ForEachStatement loop = (ForEachStatement) tree;
     ExpressionTree iterated = Trees.skip(loop.expression());
     boolean mapView = false;
@@ -47,12 +51,44 @@ public class ModifiedInForEachCheck extends DeepCheck {
     }
     for (MethodInvocationTree m : Trees.collect(loop.statement(), MethodInvocationTree.class)) {
       String n = Trees.name(m);
-      boolean mutates = mapView ? Set.of("remove", "clear", "putAll").contains(n) : MUTATORS.contains(n);
+      boolean mutates = mapView ? Set.of("remove", "clear", "put", "putAll").contains(n) : MUTATORS.contains(n);
       if (mutates && Trees.receiver(m) != null && Trees.same(Trees.receiver(m), iterated) && !leavesLoop(m)) {
         reportIssue(m, "\"" + n + "()\" changes the collection that this loop iterates: the next iteration throws "
           + "ConcurrentModificationException. Use an Iterator or removeIf().");
       }
     }
+  }
+
+  /** {@code c.forEach(x -> c.remove(x))}: the same exception from inside the iteration. */
+  private void lambda(MethodInvocationTree forEach) {
+    ExpressionTree iterated = Trees.receiver(forEach);
+    if (!"forEach".equals(Trees.name(forEach)) || iterated == null || forEach.arguments().size() != 1
+      || !(forEach.arguments().get(0) instanceof org.sonar.plugins.java.api.tree.LambdaExpressionTree lambda)) {
+      return;
+    }
+    boolean mapView = false;
+    if (Trees.skip(iterated) instanceof MethodInvocationTree view && List.of("keySet", "values", "entrySet").contains(Trees.name(view))
+      && Trees.receiver(view) != null) {
+      iterated = Trees.receiver(view);
+      mapView = true;
+    }
+    String type = iterated.symbolType().fullyQualifiedName();
+    if (Trees.symbol(iterated) == null || !type.startsWith("java.util.") || type.matches(".*(Concurrent|CopyOnWrite).*")) {
+      return;
+    }
+    final ExpressionTree it = iterated;
+    final boolean view = mapView || type.matches("java\\.util\\..*Map");
+    lambda.body().accept(new org.sonar.plugins.java.api.tree.BaseTreeVisitor() {
+      @Override
+      public void visitMethodInvocation(MethodInvocationTree m) {
+        String n = Trees.name(m);
+        boolean mutates = view ? Set.of("remove", "clear", "put", "putAll").contains(n) : MUTATORS.contains(n);
+        if (mutates && Trees.receiver(m) != null && Trees.same(Trees.receiver(m), it)) {
+          reportIssue(m, "\"" + n + "()\" changes the collection that forEach() iterates: it throws ConcurrentModificationException.");
+        }
+        super.visitMethodInvocation(m);
+      }
+    });
   }
 
   /** The modification is directly followed by break, return or throw. */

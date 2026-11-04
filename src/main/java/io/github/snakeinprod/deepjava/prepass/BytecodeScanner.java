@@ -311,7 +311,7 @@ public final class BytecodeScanner implements Opcodes {
 
     @Override
     public V copyOperation(AbstractInsnNode insn, V v) {
-      if (insn.getOpcode() == ALOAD) {
+      if (insn.getOpcode() == ALOAD || insn.getOpcode() == ILOAD) {
         return v.withLocal(((VarInsnNode) insn).var);
       }
       if (insn.getOpcode() == ASTORE && v.isNullConstant() && "null".equals(v.origin())) {
@@ -447,6 +447,8 @@ public final class BytecodeScanner implements Opcodes {
     private final Set<Integer> refParams = new HashSet<>();
     private final Set<Integer> reassigned = new HashSet<>();
     private final Set<String> fieldEscapes = new HashSet<>();
+    private final Set<Integer> indexUses = new HashSet<>();
+    private final Set<Integer> compared = new HashSet<>();
     private final Map<String, Set<String>> fieldCalls = new HashMap<>();
     private final Map<String, String> fieldInits = new HashMap<>();
     // locks
@@ -625,6 +627,12 @@ public final class BytecodeScanner implements Opcodes {
       derefParams.forEach(p -> derefShifted.add(paramIndex(p)));
       Set<Integer> closedShifted = new HashSet<>();
       closedParams.forEach(p -> closedShifted.add(paramIndex(p)));
+      Set<Integer> indexShifted = new HashSet<>();
+      for (int p : indexUses) {
+        if (p >= firstParam && p < paramEnd && !compared.contains(p) && !reassigned.contains(p)) {
+          indexShifted.add(paramIndex(p));
+        }
+      }
 
       String constant = anyReturn && !nonConstantReturn && returnConstants.size() == 1 ? returnConstants.iterator().next() : null;
       NullFacts nulls = new NullFacts(annotated, Map.copyOf(nullReturns), anyReturn && onlyNull, returnsNormally,
@@ -632,7 +640,8 @@ public final class BytecodeScanner implements Opcodes {
         localNullReturn);
       UseFacts uses = new UseFacts(Map.copyOf(callSites), Map.copyOf(checks), Map.copyOf(valueSites), Map.copyOf(ignored),
         Set.copyOf(derefShifted), Set.copyOf(closedShifted), callsSuper, Map.copyOf(staticWrites), Set.copyOf(fieldWrites),
-        Set.copyOf(fieldEscapes), Map.copyOf(fieldCalls), Map.copyOf(fieldInits), Set.copyOf(enumLoads), Map.copyOf(switchMapLoads));
+        Set.copyOf(fieldEscapes), Map.copyOf(fieldCalls), Map.copyOf(fieldInits), Set.copyOf(enumLoads), Map.copyOf(switchMapLoads),
+        Set.copyOf(indexShifted));
       LockFacts lockFacts = new LockFacts(List.copyOf(accesses), List.copyOf(edges), List.copyOf(lockedCalls), Map.copyOf(acquired),
         Set.copyOf(heldAtReturn), Map.copyOf(reacquired));
       calls.addAll(lambdaRefs);
@@ -874,6 +883,20 @@ public final class BytecodeScanner implements Opcodes {
       if (op == ATHROW && throwSeen.add(i)) {
         // "?": a rethrown variable of unknown type
         throwSites.add(new ThrowSite(createdType(top) != null ? createdType(top) : "?", lines[i], caught(i)));
+      }
+
+      // int parameters used as an index, and int values compared
+      if (op >= IALOAD && op <= SALOAD) {
+        indexUses.add(top.local());
+      } else if (op >= IFEQ && op <= IFLE) {
+        compared.add(top.local());
+      } else if (op >= IF_ICMPEQ && op <= IF_ICMPLE) {
+        compared.add(top.local());
+        compared.add(second.local());
+      } else if (insn instanceof MethodInsnNode im && sp > 0 && (("java/lang/String".equals(im.owner) && Set.of("charAt", "substring").contains(im.name))
+        || (im.owner.startsWith("java/util/") && im.owner.endsWith("List") && Set.of("get", "set", "remove").contains(im.name) && im.desc.startsWith("(I")))) {
+        int argc = Type.getArgumentTypes(im.desc).length;
+        indexUses.add(f.getStack(sp - argc).local());
       }
 
       // null tests feeding call-site statistics

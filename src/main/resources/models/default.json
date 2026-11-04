@@ -109,7 +109,11 @@
     "java/time/OffsetDateTime#parse": "java/time/format/DateTimeParseException",
     "java/time/Duration#parse": "java/time/format/DateTimeParseException",
     "java/lang/Enum#valueOf": "java/lang/IllegalArgumentException",
-    "com/fasterxml/jackson/databind/ObjectMapper#convertValue": "java/lang/IllegalArgumentException"
+    "com/fasterxml/jackson/databind/ObjectMapper#convertValue": "java/lang/IllegalArgumentException",
+    "java/util/Optional#get": "java/util/NoSuchElementException",
+    "java/util/Optional#orElseThrow()Ljava/lang/Object;": "java/util/NoSuchElementException",
+    "java/util/Iterator#next": "java/util/NoSuchElementException",
+    "java/util/Scanner#next": "java/util/NoSuchElementException"
   },
   "resourceFactories": [
     "java/nio/file/Files#newInputStream",

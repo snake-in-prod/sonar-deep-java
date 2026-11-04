@@ -163,6 +163,9 @@ public final class Rules {
       "A <code>long</code> that is routinely larger than <code>Integer.MAX_VALUE</code> (a time stamp, a file size) is cast to a "
         + "narrower type and wraps around.",
       "int seed = (int) System.currentTimeMillis(); // Noncompliant", NarrowingCastCheck::new),
+    bug(DivisionByPossibleZeroCheck.KEY, "Divisors that can be zero should be checked", cwe(369),
+      "An integer is divided by a size or count that can be 0 (an empty collection, a zero count) with no check in the method.",
+      "int avg = total / items.size(); // Noncompliant", DivisionByPossibleZeroCheck::new),
     // 5. statistics
     bug(FindingChecks.IgnoredResult.KEY, "Return values checked at most call sites should be checked here", cwe(252),
       "The result of a method is used at most of its call sites in the project (default 80% of at least 5) but ignored here.",
@@ -248,6 +251,14 @@ public final class Rules {
     new Spec(UnboundedAuthRetryCheck.KEY, "Authentication should not be retried without a limit", RuleType.VULNERABILITY, "MAJOR",
       cwe(307), tags(cwe(307), "deep"), false, "Authentication is retried in a loop that has no attempt limit.",
       "while (!authenticated) { authenticated = login(user, read()); } // Noncompliant", UnboundedAuthRetryCheck::new),
+    bug(SwappedArgumentsCheck.KEY, "Arguments should not be passed in swapped order", cwe(683),
+      "Two arguments are named exactly like the parameters of the called method, but in the opposite order.",
+      "void move(int from, int to) { ... }\nmove(to, from); // Noncompliant", SwappedArgumentsCheck::new),
+    new Spec(TimingUnsafeSecretComparisonCheck.KEY, "Secrets should be compared in constant time", RuleType.VULNERABILITY, "MAJOR",
+      cwe(208), tags(cwe(208), "deep"), false, "A password, token, signature or similar secret is compared with <code>String.equals</code> "
+        + "or <code>Arrays.equals</code>, which return at the first difference: the time taken reveals how much matched. Use "
+        + "<code>MessageDigest.isEqual</code>.",
+      "if (token.equals(expectedToken)) { ... } // Noncompliant", TimingUnsafeSecretComparisonCheck::new),
     bug(CopyPasteCheck.KEY, "Expressions copied from a neighbour should rename every identifier", cwe(),
       "Next to <code>a.x - b.x</code>, the expression <code>a.y - b.x</code> probably meant <code>b.y</code>.",
       "double dx = a.x - b.x;\ndouble dy = a.y - b.x; // Noncompliant", CopyPasteCheck::new));

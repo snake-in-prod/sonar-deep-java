@@ -25,6 +25,22 @@ class Streams {
     return in;
   }
 
+  int lostOnException(String name) throws IOException {
+    InputStream in = open(name); // Noncompliant
+    int b = in.read();
+    in.close();
+    return b;
+  }
+
+  int closedInFinally(String name) throws IOException {
+    InputStream in = open(name);
+    try {
+      return in.read();
+    } finally {
+      in.close();
+    }
+  }
+
   void dropped(String name) throws IOException {
     open(name); // Noncompliant
   }

@@ -23,7 +23,7 @@ def findbugs(jar):
                 continue
             repo = {"findbugs": "findbugs", "fbcontrib": "fb-contrib", "findsecbugs": "findsecbugs"}[m.group(1)]
             for key in re.findall(r"<rule key=['\"]([^'\"]+)['\"]", z.read(name).decode("utf-8")):
-                if repo != "findbugs" or key.startswith(FINDBUGS_FAMILIES) or key == "IS2_INCONSISTENT_SYNC":
+                if repo != "findbugs" or key.startswith(FINDBUGS_FAMILIES) or key in ("IS2_INCONSISTENT_SYNC", "GC_UNRELATED_TYPES"):
                     rules.append((repo, key))
     return sorted(set(rules))
 

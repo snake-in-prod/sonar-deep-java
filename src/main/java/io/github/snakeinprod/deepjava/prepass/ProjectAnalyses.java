@@ -55,8 +55,20 @@ final class ProjectAnalyses implements Opcodes {
     this.s = s;
     this.t = s.thresholds();
     for (ClassFacts c : s.classes().values()) {
-      c.methods().forEach((nd, f) -> methods.add(new Method(c, nd, f)));
+      if (isGenerated(c.annotations())) {
+        continue;
+      }
+      c.methods().forEach((nd, f) -> {
+        if (!isGenerated(f.info().annotations())) {
+          methods.add(new Method(c, nd, f));
+        }
+      });
     }
+  }
+
+  /** Lombok, annotation-processor and Avro output: its findings belong to the generator, not the project. */
+  static boolean isGenerated(Map<String, String> annotations) {
+    return annotations.containsKey("Generated") || annotations.containsKey("AvroGenerated");
   }
 
   List<Finding> run() {

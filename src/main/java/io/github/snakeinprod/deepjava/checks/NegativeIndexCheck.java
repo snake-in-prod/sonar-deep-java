@@ -40,6 +40,10 @@ public class NegativeIndexCheck extends DeepCheck {
       return;
     }
     Tree parent = mit.parent();
+    if (passedAsIndex(mit, parent)) {
+      reportIssue(mit, "\"" + search + "\" returns -1 when nothing is found, and the called method uses this argument as an index.");
+      return;
+    }
     String message = "\"" + search + "\" returns -1 when nothing is found; check the result before using it as an index.";
     if (isIndexUse(mit, parent)) {
       reportIssue(mit, message);
@@ -76,6 +80,17 @@ public class NegativeIndexCheck extends DeepCheck {
       return targets.get(0).display();
     }
     return null;
+  }
+
+  /** The value is an argument that the callee uses as an index without comparing it first. */
+  private boolean passedAsIndex(ExpressionTree value, Tree parent) {
+    if (parent == null || !parent.is(Tree.Kind.ARGUMENTS) || !(parent.parent() instanceof MethodInvocationTree call)) {
+      return false;
+    }
+    int pos = call.arguments().indexOf(value);
+    String key = Trees.resolveCallKey(call, summaries.get());
+    List<Summaries.Method> targets = key == null ? List.of() : summaries.get().targets(key);
+    return pos >= 0 && !targets.isEmpty() && targets.stream().allMatch(t -> t.facts().uses().indexParams().contains(pos));
   }
 
   private static boolean isIndexUse(ExpressionTree value, Tree parent) {

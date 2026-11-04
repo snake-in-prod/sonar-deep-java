@@ -9,12 +9,12 @@ import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
 import org.sonar.plugins.java.api.tree.BinaryExpressionTree;
 import org.sonar.plugins.java.api.tree.BlockTree;
-import org.sonar.plugins.java.api.tree.ExpressionStatementTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.StatementTree;
+import org.sonar.plugins.java.api.tree.ExpressionStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
@@ -38,8 +38,57 @@ public class CopyPasteCheck extends DeepCheck {
     ExpressionTree leftOperand) {
   }
 
+  /** One {@code target.prop(source.getSrcProp())} step of a setter sequence or builder chain. */
+  private record Copy(MethodInvocationTree call, String prop, Symbol source, String srcProp) {
+  }
+
   @Override
   public void visitNode(Tree tree) {
+    List<Copy> copies = new ArrayList<>();
+    if (tree instanceof BlockTree block) {
+      for (StatementTree st : block.body()) {
+        copies.add(st instanceof ExpressionStatementTree es && Trees.skip(es.expression()) instanceof MethodInvocationTree m ? copy(m) : null);
+      }
+    } else if (!(tree.parent() instanceof MemberSelectExpressionTree)) {
+      // the outermost call of a builder chain: walk it from the first step
+      List<Copy> chain = new ArrayList<>();
+      for (ExpressionTree e = (MethodInvocationTree) tree; e instanceof MethodInvocationTree m; e = Trees.receiver(m)) {
+        chain.add(0, copy(m));
+      }
+      copies.addAll(chain);
+    }
+    for (int i = 1; i < copies.size(); i++) {
+      Copy ref = copies.get(i - 1);
+      Copy c = copies.get(i);
+      if (ref != null && c != null && ref.prop().equals(ref.srcProp()) && ref.source().equals(c.source())
+        && c.srcProp().equals(ref.srcProp()) && !c.prop().equals(c.srcProp())) {
+        reportIssue(c.call().arguments().get(0), "Value \"" + ref.srcProp() + "\" is copied into \"" + c.prop()
+          + "\" as in the line above; it might be \"" + c.prop() + "\".");
+      }
+    }
+    pairs(tree);
+  }
+
+  /** {@code x.setFirst(a.getFirst())} or {@code builder.first(a.getFirst())} as (first, a, first). */
+  private static Copy copy(MethodInvocationTree m) {
+    if (m.arguments().size() != 1 || !(Trees.skip(m.arguments().get(0)) instanceof MethodInvocationTree g) || !g.arguments().isEmpty()) {
+      return null;
+    }
+    ExpressionTree src = Trees.receiver(g);
+    Symbol s = src == null ? null : Trees.symbol(src);
+    String getter = Trees.name(g);
+    if (s == null || !getter.matches("(get|is)[A-Z].*")) {
+      return null;
+    }
+    String prop = Trees.name(m).replaceFirst("^(set|with)(?=[A-Z])", "");
+    return new Copy(m, decap(prop), s, decap(getter.replaceFirst("^(get|is)", "")));
+  }
+
+  private static String decap(String s) {
+    return s.isEmpty() ? s : Character.toLowerCase(s.charAt(0)) + s.substring(1);
+  }
+
+  private void pairs(Tree tree) {
     List<ExpressionTree> exprs = new ArrayList<>();
     if (tree instanceof BlockTree block) {
       for (StatementTree s : block.body()) {

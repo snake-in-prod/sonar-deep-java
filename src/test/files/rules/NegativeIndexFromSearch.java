@@ -24,6 +24,14 @@ class Search {
     return s.charAt(i);
   }
 
+  char at(String s, int i) {
+    return s.charAt(i);
+  }
+
+  char viaCallee(String s) {
+    return at(s, s.indexOf('x')); // Noncompliant
+  }
+
   String fromList(List<String> l) {
     return l.get(l.indexOf("a")); // Noncompliant
   }

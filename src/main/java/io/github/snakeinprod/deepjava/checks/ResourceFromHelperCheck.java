@@ -56,8 +56,12 @@ public class ResourceFromHelperCheck extends DeepCheck {
     } else if (parent instanceof MemberSelectExpressionTree ms && !"close".equals(ms.identifier().name())
       && ms.parent() instanceof MethodInvocationTree call && !sym.returnType().type().equals(call.methodSymbol().returnType().type())) {
       reportIssue(mit, message);
-    } else if (parent instanceof VariableTree v && Trees.isLocal(v.symbol()) && !v.parent().is(Tree.Kind.LIST) && neverReleased(v.symbol())) {
-      reportIssue(v.simpleName(), message);
+    } else if (parent instanceof VariableTree v && Trees.isLocal(v.symbol()) && !v.parent().is(Tree.Kind.LIST)) {
+      if (neverReleased(v.symbol())) {
+        reportIssue(v.simpleName(), message);
+      } else {
+        lostOnException(v, targets.get(0).display(), type);
+      }
     }
   }
 
@@ -87,6 +91,43 @@ public class ResourceFromHelperCheck extends DeepCheck {
   /** Buffers in memory need no close(). */
   static boolean isRealResource(String type) {
     return !type.matches("(?i).*(ByteArray|CharArray|StringReader|StringWriter|StringBuilderWriter|Formatter$).*");
+  }
+
+  /**
+   * Released only by a {@code close()} outside {@code finally}, with calls in between that can throw: the resource
+   * is lost on that exception edge.
+   */
+  private void lostOnException(VariableTree v, String helper, String type) {
+    List<IdentifierTree> usages = v.symbol().usages();
+    IdentifierTree close = null;
+    for (IdentifierTree u : usages) {
+      if (u.parent() instanceof MemberSelectExpressionTree ms && "close".equals(ms.identifier().name())) {
+        close = u;
+      } else if (!(u.parent() instanceof MemberSelectExpressionTree)) {
+        return; // handed on: someone else may own it
+      }
+    }
+    if (close == null || inFinally(close) || !(v.parent() instanceof org.sonar.plugins.java.api.tree.BlockTree block)) {
+      return;
+    }
+    int from = block.body().indexOf(v);
+    int closeLine = Trees.line(close);
+    for (int i = from + 1; i < block.body().size() && Trees.line(block.body().get(i)) < closeLine; i++) {
+      if (Trees.any(block.body().get(i), MethodInvocationTree.class, m -> true)) {
+        reportIssue(v.simpleName(), "\"" + helper + "\" returns a new \"" + type + "\" that is not closed if an exception is thrown "
+          + "before the close() at line " + closeLine + "; use try-with-resources.");
+        return;
+      }
+    }
+  }
+
+  private static boolean inFinally(Tree t) {
+    for (Tree child = t, p = t.parent(); p != null; child = p, p = p.parent()) {
+      if (p instanceof org.sonar.plugins.java.api.tree.TryStatementTree ts && ts.finallyBlock() == child) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Not closed, returned, stored, passed on, captured by a lambda or used in try-with-resources. */
