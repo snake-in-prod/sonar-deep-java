@@ -29,14 +29,14 @@ public class NullArgumentCheck extends DeepCheck {
   public void visitNode(Tree tree) {
     MethodInvocationTree mit = (MethodInvocationTree) tree;
     Symbol.MethodSymbol sym = mit.methodSymbol();
-    if (sym.isUnknown() || sym.isVarArgsMethod()) {
-      return;
-    }
-    String key = Trees.callKey(sym);
-    if (key == null) {
+    if (!sym.isUnknown() && sym.isVarArgsMethod()) {
       return;
     }
     Summaries s = summaries.get();
+    String key = Trees.resolveCallKey(mit, s);
+    if (key == null) {
+      return;
+    }
     List<Summaries.Method> targets = s.targets(key);
     if (targets.isEmpty() || targets.size() > s.thresholds().maxTargets()) {
       return;
@@ -61,8 +61,8 @@ public class NullArgumentCheck extends DeepCheck {
     if (a.is(Tree.Kind.NULL_LITERAL)) {
       return "null";
     }
-    if (a instanceof MethodInvocationTree call && !call.methodSymbol().isUnknown()) {
-      String key = Trees.callKey(call.methodSymbol());
+    if (a instanceof MethodInvocationTree call) {
+      String key = Trees.resolveCallKey(call, s);
       Optional<Summaries.NullReason> r = key == null ? Optional.empty() : s.nullReturn(key);
       if (r.isPresent() && r.get().guards().isEmpty() && s.isReportable(key, r.get())) {
         return "the result of \"" + r.get().method() + "\", which can be null (" + r.get().detail() + "),";

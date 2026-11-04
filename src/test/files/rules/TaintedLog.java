@@ -14,5 +14,6 @@ class Audit {
     String user = request.getParameter("user");
     log.info("login " + user); // Noncompliant
     log.info("login " + user.replaceAll("[\r\n]", ""));
+    log.info("login {}", user);
   }
 }
