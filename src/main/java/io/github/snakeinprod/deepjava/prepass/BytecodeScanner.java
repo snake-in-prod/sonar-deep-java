@@ -84,6 +84,12 @@ public final class BytecodeScanner implements Opcodes {
     "org/apache/commons/lang3/StringUtils#defaultString", "org/apache/commons/lang3/StringUtils#trimToEmpty",
     "java/util/Objects#toString", "java/lang/String#valueOf");
 
+  /** Properties every JVM defines, as constant origins. */
+  private static final Set<String> STANDARD_PROPERTIES = Set.of("S:java.version", "S:java.vendor", "S:java.home", "S:java.class.path",
+    "S:java.io.tmpdir", "S:java.specification.version", "S:java.vm.name", "S:java.vm.vendor", "S:java.vm.version", "S:java.runtime.version",
+    "S:os.name", "S:os.arch", "S:os.version", "S:file.separator", "S:path.separator", "S:line.separator", "S:user.name", "S:user.home",
+    "S:user.dir", "S:native.encoding", "S:file.encoding");
+
   private static final Set<String> KEY_LOOKUPS = Set.of("get", "containsKey", "remove", "getOrDefault");
 
   private static final Set<String> LOCK_OWNERS = Set.of("java/util/concurrent/locks/Lock", "java/util/concurrent/locks/ReentrantLock",
@@ -429,6 +435,11 @@ public final class BytecodeScanner implements Opcodes {
     public V naryOperation(AbstractInsnNode insn, List<? extends V> values) {
       if (insn instanceof MethodInsnNode mi) {
         Type ret = Type.getReturnType(mi.desc);
+        if (isRef(ret) && "java/lang/System".equals(mi.owner) && "getProperty".equals(mi.name) && values.size() == 1
+          && values.get(0).origin() != null && STANDARD_PROPERTIES.contains(values.get(0).origin())) {
+          // System.getProperty("java.io.tmpdir"): every JVM defines it
+          return V.U1;
+        }
         if (isRef(ret)) {
           boolean exact = mi.getOpcode() == INVOKESTATIC || mi.getOpcode() == INVOKESPECIAL;
           String key = callKey(exact, mi.owner, mi.name, mi.desc);
@@ -1140,7 +1151,7 @@ public final class BytecodeScanner implements Opcodes {
           for (int a = 0; a < argc; a++) {
             recordNullCheck(f.getStack(sp - 1 - a), i);
           }
-          if (mi.name.startsWith("requireNonNull") && argc >= 1) {
+          if (mi.name.equals("requireNonNull") && argc >= 1) {
             derefs.add(f.getStack(sp - argc).local());
           }
         }

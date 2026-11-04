@@ -123,7 +123,7 @@ Full procedure with verification and rollback, written to be followed by a perso
 | `sonar.deepjava.nullableAnnotations.ignored` | none | Qualified names to ignore, e.g. `org.apache.avro.reflect.Nullable` |
 | `sonar.deepjava.taint.dataSources` | `true` | Integers read from buffers, streams, readers and parsers count as untrusted sizes, indexes and loop bounds |
 | `sonar.deepjava.taint.logParametersSafe` | `true` | `log.info("x {}", value)` is not log injection (the layout encodes CR/LF); only concatenation into the message is reported |
-| `sonar.deepjava.referenceParity` | `false` | Also report what whole-program reference analyzers report where Deep Java deliberately stays quiet: `Objects.requireNonNull` on a nullable value counts as a dereference; statistical null checks apply to getters at 80%; null-for-null mappers and keyed lookups propagate through wrappers; dereferences in a later branch after a null assignment; Lombok-null-checked fields passed on; parsed numbers as size sources and their bound checks; parameters of public methods to file paths; numbers into cookies; same-key puts and concurrent maps in for-each; String keys in a generic `Map<K, V>`; copy-paste between `if`/`else` branches; `replaceFirst(".")`; and `LombokUnreachableCode`. Use it to compare with such an analyzer |
+| `sonar.deepjava.referenceParity` | `false` | Also report what whole-program reference analyzers report where Deep Java deliberately stays quiet: `Objects.requireNonNull` on a nullable value counts as a dereference; statistical null checks apply to getters at 80%; null-for-null mappers and keyed lookups propagate through wrappers; dereferences in a later branch after a null assignment; Lombok-null-checked fields passed on; parsed numbers as size sources and their bound checks; parameters of public methods to file paths; numbers into cookies; same-key puts and concurrent maps in for-each; String keys in a generic `Map<K, V>`; copy-paste between `if`/`else` branches and between neighbouring lines; `replaceFirst(".")`; any `return null` without call-site statistics, which drop to 50% of 3 sites (test callers included); nullable values passed to a parameter dereferenced on some path; taint reported where a value enters a helper too; bound checks and lengths of any untrusted input as sizes; unclosed streams; and `LombokUnreachableCode`. Use it to compare with such an analyzer |
 
 ### Library models
 
@@ -137,6 +137,7 @@ sinks, propagators, sanitizers). Files given in `sonar.deepjava.models` use the 
   "guards": {"com/acme/Registry#lookup": ["contains"]},
   "uncheckedThrows": {"com/acme/Ids#parse": "java/lang/IllegalArgumentException"},
   "resourceFactories": ["com/acme/Pool#borrow"],
+  "dereferencedParameters": {"com/acme/Xml#parse": [0]},
   "sources": {"com/acme/Web#param": "USER"},
   "sinks": {"com/acme/Db#run": {"kind": "SQL", "args": [0]}},
   "propagators": {"com/acme/Text": "receiver"},
@@ -150,6 +151,8 @@ packages (`org/opensaml/**/Assertion#getSubject`); in sanitizers `*` matches any
 Annotations in the library jars themselves need no model: a method, return type or field annotated with one of
 `sonar.deepjava.nullableAnnotations`, a plain getter of such a field, a `ReturnValuesAreNullableByDefault` class or
 package, and a nullable parameter of a library method that a project method overrides are all read from bytecode.
+`dereferencedParameters` lists library methods and constructors (`<init>`) that throw on a null argument at the
+given positions (`new StringReader(x)`, `DocumentBuilder.parse(x)`): a nullable value passed there is reported.
 Sink argument indexes exclude the receiver, which is `-1`; `parameterArgs` are template parameters (log calls).
 Fields annotated with a `fieldSourceAnnotations` entry (Spring `@Value` by default), and every field of a class
 annotated `@ConfigurationProperties`, are sources. Taint source kinds:
@@ -222,45 +225,50 @@ the cases that cross methods.
 Mature libraries, analysed from their Maven Central class and source jars on SonarQube 26.10 with the default
 profile and `sonar.deepjava.referenceParity=false`. Every issue was reviewed by hand.
 
-| Project | Classes | Issues 0.3.0 | Issues 0.4.0 | Issues 0.5.0 |
-|---|--:|--:|--:|--:|
-| commons-lang3 3.21.0 | 439 | 1 | 3 | 4 |
-| commons-io 2.22.0 | 428 | 4 | 4 | 4 |
-| jackson-databind 2.22.4 | 813 | 2 | 3 | 4 |
-| kafka-clients 4.4.0 | 4345 | 21 | 34 | 38 |
+| Project | Classes | 0.3.0 | 0.4.0 | 0.5.0 | 0.6.0 |
+|---|--:|--:|--:|--:|--:|
+| commons-lang3 3.21.0 | 439 | 1 | 3 | 4 | 6 |
+| commons-io 2.22.0 | 428 | 4 | 4 | 4 | 4 |
+| jackson-databind 2.22.4 | 813 | 2 | 3 | 4 | 5 |
+| kafka-clients 4.4.0 | 4345 | 21 | 34 | 38 | 39 |
 
-By rule, 0.5.0:
+By rule, 0.6.0:
 
 | Rule | Issues | True positive | False positive | Not confirmed |
 |---|--:|--:|--:|--:|
 | `InconsistentLocking` | 13 | 5 | 0 | 8 |
 | `TaintedSize` | 12 | 0 | 0 | 12 |
 | `NullReturnDereference` | 8 | 1 | 7 | 0 |
+| `NullPassedToDereferencedParameter` | 4 | 2 | 2 | 0 |
 | `NullCheckedAtMostCallSites` | 4 | 0 | 0 | 4 |
 | `DivisionByPossibleZero` | 4 | 0 | 0 | 4 |
 | `RegexPitfall` | 3 | 3 | 0 | 0 |
 | `NegativeIndexFromSearch` | 2 | 0 | 2 | 0 |
 | `UncheckedExceptionInEntryPoint` | 2 | 0 | 0 | 2 |
-| `NullPassedToDereferencedParameter` | 1 | 1 | 0 | 0 |
+| `CodeAfterAlwaysThrows` | 1 | 1 | 0 | 0 |
 | `SecretLeak` | 1 | 0 | 1 | 0 |
-| other 48 rules | 0 | | | |
+| other 47 rules | 0 | | | |
 
 - True positives: fields read or written without the lock that guards them everywhere else (in commons-io a
   `long` read without the lock is not even atomic), `null` passed to a Jackson method that dereferences that
-  parameter, a nullable `getAccessor()` result used without a check, regex classes of one element (`[T]`, `[\w]`)
-  and single-character alternatives (`(L|U)`).
+  parameter, a nullable `getAccessor()` result used without a check, `new File(file.getParent())` in Kafka (null for
+  a root path), an assignment after a Jackson helper that always throws, regex classes of one element (`[T]`,
+  `[\w]`) and single-character alternatives (`(L|U)`).
 - False positives: `Map.get(CONSTANT)` on Kafka configuration maps that Kafka fills with defaults,
   `TypeUtils.getTypeArguments()` (documented to return null for unassignable types) called with assignable types,
+  also where its result is passed on,
   `lastIndexOf`/`indexOf` results whose presence was established just before, a blank client secret put into an
   exception message.
 - Not confirmed: Kafka coordinator and batch fields that Kafka documents as accessed from one thread; divisions by
   partition and consumer counts that Kafka's callers keep above 0; loop bounds, allocations and list sizes read from
   protocol buffers and varints (ADR 0002 F: an attacker-sized count, bounded only by the buffer); a
   `NumberFormatException` from parsing a broker address that can end a network thread.
-- What 0.4.0 and 0.5.0 added on these libraries comes from ADR 0002 groups A, B, C, F and H (null collections,
+- What 0.4.0 to 0.6.0 added on these libraries comes from ADR 0002 groups A, B, C, D, F and H (null collections,
   null checks now counted on repeated guarded calls, protocol sizes, regex, entry points, divisors passed to a callee);
   no other rule raises more than in 0.3.0. 0.5.0 adds 4 `NullCheckedAtMostCallSites` (null-checked at 6 of 7, 4 of 5,
-  5 of 6 and 5 of 6 call sites), one more `getTypeArguments()` and a partition count passed to a dividing callee.
+  5 of 6 and 5 of 6 call sites), one more `getTypeArguments()` and a partition count passed to a dividing callee;
+  0.6.0 adds nullable values passed to dereferencing callees (2 `getTypeArguments()` results, Kafka's `getParent()`)
+  and code after a call whose every path throws.
 
 The OWASP Benchmark scores are unchanged from 0.3.0 (measured again on 0.5.0).
 
