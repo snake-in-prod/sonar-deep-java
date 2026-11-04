@@ -18,3 +18,33 @@ class Files {
     return null;
   }
 }
+
+class Storage {
+  @org.springframework.beans.factory.annotation.Value("${storage.dir}")
+  private String dir;
+
+  java.io.File open() {
+    return new java.io.File(dir); // Noncompliant
+  }
+
+  String env() throws java.io.IOException {
+    return java.nio.file.Files.readString(java.nio.file.Path.of(System.getenv("DATA_FILE"))); // Noncompliant
+  }
+}
+
+@org.springframework.boot.context.properties.ConfigurationProperties("storage")
+class StorageProperties {
+  private String root;
+
+  String getRoot() {
+    return root;
+  }
+}
+
+class UsesProperties {
+  boolean create(StorageProperties p) throws java.io.IOException {
+    java.io.File f = new java.io.File(p.getRoot()); // Noncompliant
+    return f.createNewFile(); // Noncompliant
+  }
+}
+

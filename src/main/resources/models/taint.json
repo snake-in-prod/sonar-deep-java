@@ -130,7 +130,15 @@
     "org/apache/kafka/clients/consumer/ConsumerRecord#value": "MSG",
     "org/apache/kafka/clients/consumer/ConsumerRecord#key": "MSG",
     "org/springframework/core/env/Environment#getProperty": "CONFIG",
-    "org/springframework/core/env/PropertyResolver#getProperty": "CONFIG"
+    "org/springframework/core/env/PropertyResolver#getProperty": "CONFIG",
+    "java/net/DatagramPacket#getData": "NET",
+    "java/io/DataInput#readFully": "DATA",
+    "java/io/DataInputStream#readFully": "DATA",
+    "java/io/DataInput#readNBytes": "DATA",
+    "java/io/DataInputStream#readNBytes": "DATA",
+    "java/io/InputStream#readNBytes": "DATA",
+    "java/io/RandomAccessFile#read": "DATA",
+    "java/io/RandomAccessFile#readFully": "DATA"
   },
   "sourceParameterAnnotations": {
     "RequestParam": "USER",
@@ -901,6 +909,134 @@
       "args": [
         1
       ]
+    },
+    "java/io/File#createNewFile": {
+      "kind": "PATH",
+      "args": [
+        -1
+      ]
+    },
+    "java/io/File#mkdirs": {
+      "kind": "PATH",
+      "args": [
+        -1
+      ]
+    },
+    "java/io/File#delete": {
+      "kind": "PATH",
+      "args": [
+        -1
+      ]
+    },
+    "java/nio/file/Files#newBufferedReader": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#newBufferedWriter": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#readString": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#readAllLines": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#lines": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#write": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#writeString": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#delete": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#deleteIfExists": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#createFile": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#createDirectory": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#createDirectories": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#list": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#walk": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#newByteChannel": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
+    },
+    "java/nio/file/Files#copy": {
+      "kind": "PATH",
+      "args": [
+        0,
+        1
+      ]
+    },
+    "java/nio/file/Files#move": {
+      "kind": "PATH",
+      "args": [
+        0,
+        1
+      ]
+    },
+    "java/util/zip/ZipFile#<init>": {
+      "kind": "PATH",
+      "args": [
+        0
+      ]
     }
   },
   "propagators": {
@@ -1017,6 +1153,7 @@
     "java/util/Collection#size"
   ],
   "fieldSourceAnnotations": {
-    "Value": "CONFIG"
+    "Value": "CONFIG",
+    "ConfigurationProperties": "CONFIG"
   }
 }

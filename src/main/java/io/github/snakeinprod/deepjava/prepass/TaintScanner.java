@@ -300,6 +300,13 @@ public final class TaintScanner implements Opcodes {
       if (!f.owner.equals(cn.name)) {
         return null;
       }
+      // a bound configuration class (Spring @ConfigurationProperties): every field holds a configured value
+      for (String a : BytecodeScanner.annotations(cn.visibleAnnotations, cn.invisibleAnnotations).keySet()) {
+        String kind = models.fieldAnnotationSource(a);
+        if (kind != null && "ConfigurationProperties".equals(a)) {
+          return kind;
+        }
+      }
       for (org.objectweb.asm.tree.FieldNode fn : cn.fields) {
         if (fn.name.equals(f.name)) {
           for (String a : BytecodeScanner.annotations(fn.visibleAnnotations, fn.invisibleAnnotations).keySet()) {
@@ -549,6 +556,12 @@ public final class TaintScanner implements Opcodes {
           Set<String> src = union(Set.of(source(kind, display(mi.owner, mi.name))), receiver == null ? Set.of() : receiver.labels());
           return new TV(ret.getSize(), BytecodeScanner.isRef(ret) ? src : numeric(src), -1, null);
         }
+        if ("java/lang/String".equals(mi.owner) && "length".equals(mi.name) && receiver != null) {
+          // the length of a line read from input is as untrusted as the line; of user text it is bounded by the request
+          Set<String> data = new HashSet<>();
+          receiver.labels().stream().filter(l -> l.startsWith("SDATA|")).forEach(l -> data.add(l.endsWith("#") ? l : l + "#"));
+          return new TV(1, Set.copyOf(data), -1, null);
+        }
         if (models.isSanitizer(mi.owner, mi.name) || isCrlfStrip(mi, values)) {
           return newValue(ret);
         }
@@ -663,6 +676,15 @@ public final class TaintScanner implements Opcodes {
         boolean mutates = ("append".equals(mi.name) || "insert".equals(mi.name)) && "all".equals(p)
           || p != null && Set.of("add", "addAll", "put", "putAll", "set", "offer", "push", "addFirst", "addLast", "putIfAbsent", "command", "load").contains(mi.name)
           || "<init>".equals(mi.name) && ("args".equals(p) || "all".equals(p) || models.propagation(mi.owner, "<init>") != null);
+        if ("DATA".equals(models.source(mi.owner, mi.name))) {
+          // read(byte[]) / readFully(byte[]): the array now holds input bytes
+          Type[] argTypes = Type.getArgumentTypes(mi.desc);
+          for (int a = 0; a < argc; a++) {
+            if (argTypes[a].getSort() == Type.ARRAY) {
+              taintObject(out, f.getStack(sp - argc + a), Set.of(source("DATA", display(mi.owner, mi.name))));
+            }
+          }
+        }
         String ctorSource = "<init>".equals(mi.name) ? models.source(mi.owner, "<init>") : null;
         if (receiver != null && ctorSource != null) {
           taintObject(out, receiver, Set.of(source(ctorSource, "new " + mi.owner.substring(mi.owner.lastIndexOf('/') + 1) + "()")));
@@ -760,13 +782,21 @@ public final class TaintScanner implements Opcodes {
       return null;
     }
 
-    /** {@code x < bound}: a constant or field bound sanitises x; a loop counter compared with x makes x a loop bound. */
+    /**
+     * {@code x < bound}: a constant or field bound sanitises x; a loop counter compared with x makes x a loop bound.
+     * A tainted bound ({@code count > max} with {@code max} read from the same input) or a constant up to 1 (a check
+     * of the lower bound only, {@code n < 1}) leaves x untrusted.
+     */
     private Frame<TV> bound(Frame<TV> f, TV x, TV other) {
       if (x.labels().isEmpty()) {
         return f;
       }
       if (other.local() >= 0 && counters.contains(other.local()) && other.labels().isEmpty()) {
         sink("SIZE", x.labels(), "loop bound");
+        return f;
+      }
+      Integer c = intConst(other);
+      if (!other.labels().isEmpty() || c != null && c <= 1) {
         return f;
       }
       Frame<TV> r = new Frame<>(f);

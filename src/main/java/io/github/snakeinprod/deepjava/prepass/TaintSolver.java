@@ -50,7 +50,14 @@ final class TaintSolver {
             for (SinkFlow f : sinkParams(t, 0)) {
               if (f.param() < edge.args().size()) {
                 Set<String> labels = resolveAll(m, accept(f.sink().kind(), edge.args().get(f.param())), 0);
-                report(f.sink(), f.where(), labels, Summaries.location(c, edge.line()));
+                if ("SIZE".equals(f.sink().kind())) {
+                  // a size is checked (or not) by the caller that passes it: report at the call
+                  Sink atCall = new Sink("SIZE", edge.line(), f.sink().labels(), f.sink().api() + " in " + t.display() + " at "
+                    + Summaries.location(f.where(), f.sink().line()));
+                  report(atCall, c, labels, Summaries.location(c, edge.line()));
+                } else {
+                  report(f.sink(), f.where(), labels, Summaries.location(c, edge.line()));
+                }
               }
             }
           }
@@ -225,7 +232,12 @@ final class TaintSolver {
       return "SIZE".equals(sinkKind) && s.options().dataSources() ? "TaintedSize" : null;
     }
     if ("CONFIG".equals(sourceKind)) {
-      return "COMMAND".equals(sinkKind) ? "TaintedCommand" : null;
+      return switch (sinkKind) {
+        case "COMMAND" -> "TaintedCommand";
+        case "PATH" -> "TaintedPath";
+        case "SIZE" -> s.options().dataSources() ? "TaintedSize" : null;
+        default -> null;
+      };
     }
     if ("LOGARG".equals(sinkKind)) {
       return !s.options().logParametersSafe() && REMOTE.contains(sourceKind) ? "TaintedLog" : null;
@@ -283,7 +295,7 @@ final class TaintSolver {
       default -> sink.kind();
     };
     String verb = "SECRET".equals(kind) ? " contains " : "DECISION".equals(sink.kind()) ? " based on " : " built from ";
-    return target + " (" + sink.api() + ")" + verb + source + ": " + what + " at " + at
+    return target + ("SIZE".equals(sink.kind()) ? "" : " (" + sink.api() + ")") + verb + source + ": " + what + " at " + at
       + (passedAt != null ? " (passed at " + passedAt + ")" : "") + ".";
   }
 
