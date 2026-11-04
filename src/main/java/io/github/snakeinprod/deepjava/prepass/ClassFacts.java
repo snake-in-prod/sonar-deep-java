@@ -63,13 +63,15 @@ public record ClassFacts(String name, String superName, List<String> interfaces,
    * @param returnedNew       types instantiated with {@code new} and returned
    * @param returnedFields    fields (owner#name) whose value is returned as is (getters, Lombok included)
    * @param localNullReturn   line of a return of a local explicitly set to {@code null} on some path, or -1
+   * @param mayReturnZero     some path returns the int constant 0
    */
   public record NullFacts(boolean annotatedNullable, Map<Integer, Set<String>> nullReturns, boolean onlyNull,
     boolean returnsNormally, Map<String, Integer> returnedCalls, Set<String> invokedNames, String constantReturn,
-    boolean mayReturnMinusOne, Set<String> returnedNew, Set<String> returnedFields, int localNullReturn) implements Serializable {
+    boolean mayReturnMinusOne, Set<String> returnedNew, Set<String> returnedFields, int localNullReturn,
+    boolean mayReturnZero) implements Serializable {
 
     static NullFacts empty(boolean returnsNormally) {
-      return new NullFacts(false, Map.of(), false, returnsNormally, Map.of(), Set.of(), null, false, Set.of(), Set.of(), -1);
+      return new NullFacts(false, Map.of(), false, returnsNormally, Map.of(), Set.of(), null, false, Set.of(), Set.of(), -1, false);
     }
   }
 
@@ -91,15 +93,17 @@ public record ClassFacts(String name, String superName, List<String> interfaces,
    * @param switchMapLoads  enum constants loaded by a switch-map initialiser, to a line
    * @param indexParams     int parameters used as an index without being compared first
    * @param maybeDerefParams parameters dereferenced on some path and never compared to null (nor reassigned)
+   * @param keyParams       parameters passed as the key of {@code get}/{@code containsKey}/{@code remove} on a field map,
+   *                        to that field (owner#name)
    */
   public record UseFacts(Map<String, Integer> callSites, Map<String, Integer> nullChecks, Map<String, Integer> valueSites,
     Map<String, List<Integer>> ignoredResults, Set<Integer> derefParams, Set<Integer> closedParams, boolean callsSuper,
     Map<String, Integer> staticWrites, Set<String> fieldWrites, Set<String> fieldEscapes, Map<String, Set<String>> fieldCalls,
     Map<String, String> fieldInits, Set<String> enumLoads, Map<String, Integer> switchMapLoads, Set<Integer> indexParams,
-    Set<Integer> maybeDerefParams) implements Serializable {
+    Set<Integer> maybeDerefParams, Map<Integer, String> keyParams) implements Serializable {
 
     static final UseFacts EMPTY = new UseFacts(Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Set.of(), false, Map.of(),
-      Set.of(), Set.of(), Map.of(), Map.of(), Set.of(), Map.of(), Set.of(), Set.of());
+      Set.of(), Set.of(), Map.of(), Map.of(), Set.of(), Map.of(), Set.of(), Set.of(), Map.of());
   }
 
   public record FieldAccess(String field, boolean write, int line, Set<String> locks) implements Serializable {

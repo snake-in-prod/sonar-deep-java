@@ -22,18 +22,40 @@ public class SwappedArgumentsCheck extends DeepCheck {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.METHOD_INVOCATION);
+    return List.of(Tree.Kind.METHOD_INVOCATION, Tree.Kind.NEW_CLASS);
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if (tree instanceof org.sonar.plugins.java.api.tree.NewClassTree nc) {
+      // new Relation(target, source) for Relation(source, target)
+      check(nc.arguments(), constructorParams(nc.methodSymbol()), null);
+      return;
+    }
     MethodInvocationTree mit = (MethodInvocationTree) tree;
-    List<String> params = paramNames(mit);
-    if (params.size() != mit.arguments().size() || params.size() < 2) {
+    check(mit.arguments(), paramNames(mit), mit);
+  }
+
+  private List<String> constructorParams(Symbol.MethodSymbol sym) {
+    if (sym.isUnknown()) {
+      return List.of();
+    }
+    if (sym.declaration() != null) {
+      List<String> names = new ArrayList<>();
+      sym.declarationParameters().forEach(p -> names.add(p.name()));
+      return names;
+    }
+    String key = Trees.callKey(sym);
+    List<Summaries.Method> targets = key == null ? List.of() : summaries.get().targets(key);
+    return targets.isEmpty() ? List.of() : targets.get(0).facts().info().paramNames();
+  }
+
+  private void check(List<? extends org.sonar.plugins.java.api.tree.ExpressionTree> arguments, List<String> params, MethodInvocationTree mit) {
+    if (params.size() != arguments.size() || params.size() < 2) {
       return;
     }
     List<String> args = new ArrayList<>();
-    for (var a : mit.arguments()) {
+    for (var a : arguments) {
       args.add(a instanceof IdentifierTree id ? id.name() : null);
     }
     for (int i = 0; i < args.size(); i++) {
@@ -41,8 +63,8 @@ public class SwappedArgumentsCheck extends DeepCheck {
         String ai = args.get(i);
         String aj = args.get(j);
         if (ai != null && aj != null && !ai.equals(aj) && ai.equals(params.get(j)) && aj.equals(params.get(i))
-          && !params.get(i).matches("arg\\d+") && !bothOrders(mit, ai, aj)) {
-          reportIssue(mit.arguments().get(i), "\"" + ai + "\" and \"" + aj + "\" are passed to the parameters named \"" + params.get(i)
+          && !params.get(i).matches("arg\\d+") && (mit == null || !bothOrders(mit, ai, aj))) {
+          reportIssue(arguments.get(i), "\"" + ai + "\" and \"" + aj + "\" are passed to the parameters named \"" + params.get(i)
             + "\" and \"" + params.get(j) + "\": are they swapped?");
           return;
         }

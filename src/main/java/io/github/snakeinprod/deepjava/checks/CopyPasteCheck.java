@@ -38,8 +38,11 @@ public class CopyPasteCheck extends DeepCheck {
     ExpressionTree leftOperand) {
   }
 
-  /** One {@code target.prop(source.getSrcProp())} step of a setter sequence or builder chain. */
-  private record Copy(MethodInvocationTree call, String prop, Symbol source, String srcProp) {
+  /**
+   * One {@code target.prop(source.getSrcProp())} step of a setter sequence or builder chain, or a local
+   * {@code prop = source.getSrcProp()}; {@code value} is the getter call, {@code target} the receiver (or null).
+   */
+  private record Copy(ExpressionTree value, String prop, Symbol source, String srcProp, Symbol target) {
   }
 
   @Override
@@ -47,7 +50,11 @@ public class CopyPasteCheck extends DeepCheck {
     List<Copy> copies = new ArrayList<>();
     if (tree instanceof BlockTree block) {
       for (StatementTree st : block.body()) {
-        copies.add(st instanceof ExpressionStatementTree es && Trees.skip(es.expression()) instanceof MethodInvocationTree m ? copy(m) : null);
+        if (st instanceof VariableTree v && v.initializer() != null) {
+          copies.add(getter(Trees.skip(v.initializer()), v.simpleName().name(), null));
+        } else {
+          copies.add(st instanceof ExpressionStatementTree es && Trees.skip(es.expression()) instanceof MethodInvocationTree m ? copy(m) : null);
+        }
       }
     } else if (!(tree.parent() instanceof MemberSelectExpressionTree)) {
       // the outermost call of a builder chain: walk it from the first step
@@ -62,8 +69,15 @@ public class CopyPasteCheck extends DeepCheck {
       Copy c = copies.get(i);
       if (ref != null && c != null && ref.prop().equals(ref.srcProp()) && ref.source().equals(c.source())
         && c.srcProp().equals(ref.srcProp()) && !c.prop().equals(c.srcProp())) {
-        reportIssue(c.call().arguments().get(0), "Value \"" + ref.srcProp() + "\" is copied into \"" + c.prop()
+        reportIssue(c.value(), "Value \"" + ref.srcProp() + "\" is copied into \"" + c.prop()
           + "\" as in the line above; it might be \"" + c.prop() + "\".");
+      }
+      Copy next = i + 1 < copies.size() ? copies.get(i + 1) : null;
+      if (ref != null && c != null && next != null && c.target() != null && c.target().equals(ref.target()) && c.target().equals(next.target())
+        && ref.source().equals(next.source()) && !c.source().equals(ref.source()) && c.prop().equals(c.srcProp())
+        && ref.prop().equals(ref.srcProp()) && next.prop().equals(next.srcProp())) {
+        reportIssue(c.value(), "\"" + c.prop() + "\" is read from \"" + c.source().name() + "\" while the lines around it read from \""
+          + ref.source().name() + "\"; is it copied from the wrong object?");
       }
     }
     pairs(tree);
@@ -71,17 +85,26 @@ public class CopyPasteCheck extends DeepCheck {
 
   /** {@code x.setFirst(a.getFirst())} or {@code builder.first(a.getFirst())} as (first, a, first). */
   private static Copy copy(MethodInvocationTree m) {
-    if (m.arguments().size() != 1 || !(Trees.skip(m.arguments().get(0)) instanceof MethodInvocationTree g) || !g.arguments().isEmpty()) {
+    if (m.arguments().size() != 1) {
+      return null;
+    }
+    ExpressionTree r = Trees.receiver(m);
+    Symbol target = r == null ? null : Trees.symbol(r);
+    return getter(Trees.skip(m.arguments().get(0)), Trees.name(m).replaceFirst("^(set|with)(?=[A-Z])", ""), target);
+  }
+
+  /** {@code source.getX()} (or {@code Helper.getX()}) as a copy into {@code prop}, or null. */
+  private static Copy getter(ExpressionTree value, String prop, Symbol target) {
+    if (!(value instanceof MethodInvocationTree g) || !g.arguments().isEmpty()) {
       return null;
     }
     ExpressionTree src = Trees.receiver(g);
-    Symbol s = src == null ? null : Trees.symbol(src);
+    Symbol s = src == null ? null : src instanceof IdentifierTree id && !id.symbol().isUnknown() ? id.symbol() : Trees.symbol(src);
     String getter = Trees.name(g);
     if (s == null || !getter.matches("(get|is)[A-Z].*")) {
       return null;
     }
-    String prop = Trees.name(m).replaceFirst("^(set|with)(?=[A-Z])", "");
-    return new Copy(m, decap(prop), s, decap(getter.replaceFirst("^(get|is)", "")));
+    return new Copy(g, decap(prop), s, decap(getter.replaceFirst("^(get|is)", "")), target);
   }
 
   private static String decap(String s) {

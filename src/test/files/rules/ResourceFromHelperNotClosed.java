@@ -44,4 +44,17 @@ class Streams {
   void dropped(String name) throws IOException {
     open(name); // Noncompliant
   }
+
+  int gzip(InputStream raw) throws IOException {
+    java.util.zip.GZIPInputStream gz = new java.util.zip.GZIPInputStream(raw); // Noncompliant
+    int b = gz.read();
+    gz.close();
+    return b;
+  }
+
+  int gzipTry(InputStream raw) throws IOException {
+    try (java.util.zip.GZIPInputStream gz = new java.util.zip.GZIPInputStream(raw)) {
+      return gz.read();
+    }
+  }
 }

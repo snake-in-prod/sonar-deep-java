@@ -75,8 +75,8 @@ public class NegativeIndexCheck extends DeepCheck {
     }
     String key = Trees.callKey(s);
     List<Summaries.Method> targets = key == null ? List.of() : summaries.get().targets(key);
-    if (!targets.isEmpty() && name.matches("(?i).*(index|find|search|position|pos|lookup).*")
-      && targets.stream().allMatch(t -> t.facts().nulls().mayReturnMinusOne())) {
+    // any project method with a "return -1" path: "first free slot", "position of", "index of"
+    if (!targets.isEmpty() && targets.stream().allMatch(t -> t.facts().nulls().mayReturnMinusOne())) {
       return targets.get(0).display();
     }
     return null;
@@ -94,6 +94,9 @@ public class NegativeIndexCheck extends DeepCheck {
   }
 
   private static boolean isIndexUse(ExpressionTree value, Tree parent) {
+    if (parent instanceof org.sonar.plugins.java.api.tree.ArrayDimensionTree) {
+      parent = parent.parent();
+    }
     if (parent instanceof ArrayAccessExpressionTree aa && aa.dimension().expression() == value) {
       return true;
     }

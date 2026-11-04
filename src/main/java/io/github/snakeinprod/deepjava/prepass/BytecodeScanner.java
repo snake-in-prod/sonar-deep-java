@@ -74,6 +74,8 @@ public final class BytecodeScanner implements Opcodes {
     "java/util/Objects#isNull", "java/util/Objects#nonNull", "java/util/Objects#requireNonNull",
     "java/util/Objects#requireNonNullElse", "java/util/Objects#requireNonNullElseGet", "java/util/Optional#ofNullable");
 
+  private static final Set<String> KEY_LOOKUPS = Set.of("get", "containsKey", "remove", "getOrDefault");
+
   private static final Set<String> LOCK_OWNERS = Set.of("java/util/concurrent/locks/Lock", "java/util/concurrent/locks/ReentrantLock",
     "java/util/concurrent/locks/ReentrantReadWriteLock$ReadLock", "java/util/concurrent/locks/ReentrantReadWriteLock$WriteLock",
     "java/util/concurrent/locks/StampedLock");
@@ -135,7 +137,7 @@ public final class BytecodeScanner implements Opcodes {
     boolean bodyless = m.instructions.size() == 0 || (m.access & (ACC_ABSTRACT | ACC_NATIVE)) != 0;
     boolean returnsNormally = bodyless || hasReturn(m);
     if (bodyless) {
-      NullFacts nulls = new NullFacts(hasNullableAnnotation(m), Map.of(), false, true, Map.of(), Set.of(), null, false, Set.of(), Set.of(), -1);
+      NullFacts nulls = new NullFacts(hasNullableAnnotation(m), Map.of(), false, true, Map.of(), Set.of(), null, false, Set.of(), Set.of(), -1, false);
       return new MethodFacts(info, nulls, UseFacts.EMPTY, LockFacts.EMPTY, ExFacts.EMPTY, ClassFacts.TaintFacts.EMPTY);
     }
     try {
@@ -480,6 +482,7 @@ public final class BytecodeScanner implements Opcodes {
     private final Set<String> returnConstants = new HashSet<>();
     private boolean nonConstantReturn;
     private boolean mayReturnMinusOne;
+    private boolean mayReturnZero;
     private final Set<String> returnedNew = new HashSet<>();
     private final Set<String> returnedFields = new HashSet<>();
     private int localNullReturn = -1;
@@ -494,6 +497,7 @@ public final class BytecodeScanner implements Opcodes {
     private final Set<Integer> compared = new HashSet<>();
     private final Set<Integer> anyDeref = new HashSet<>();
     private final Set<Integer> nullCompared = new HashSet<>();
+    private final Map<Integer, String> keyUses = new HashMap<>();
     private final Map<String, Set<String>> fieldCalls = new HashMap<>();
     private final Map<String, String> fieldInits = new HashMap<>();
     // locks
@@ -678,6 +682,12 @@ public final class BytecodeScanner implements Opcodes {
           maybeShifted.add(paramIndex(p));
         }
       }
+      Map<Integer, String> keyShifted = new HashMap<>();
+      keyUses.forEach((p, field) -> {
+        if (p >= firstParam && p < paramEnd && !reassigned.contains(p)) {
+          keyShifted.put(paramIndex(p), field);
+        }
+      });
       Set<Integer> indexShifted = new HashSet<>();
       for (int p : indexUses) {
         if (p >= firstParam && p < paramEnd && !compared.contains(p) && !reassigned.contains(p)) {
@@ -688,11 +698,11 @@ public final class BytecodeScanner implements Opcodes {
       String constant = anyReturn && !nonConstantReturn && returnConstants.size() == 1 ? returnConstants.iterator().next() : null;
       NullFacts nulls = new NullFacts(annotated, Map.copyOf(nullReturns), anyReturn && onlyNull, returnsNormally,
         Map.copyOf(returnedCalls), Set.copyOf(invoked), constant, mayReturnMinusOne, Set.copyOf(returnedNew), Set.copyOf(returnedFields),
-        localNullReturn);
+        localNullReturn, mayReturnZero);
       UseFacts uses = new UseFacts(Map.copyOf(callSites), Map.copyOf(checks), Map.copyOf(valueSites), Map.copyOf(ignored),
         Set.copyOf(derefShifted), Set.copyOf(closedShifted), callsSuper, Map.copyOf(staticWrites), Set.copyOf(fieldWrites),
         Set.copyOf(fieldEscapes), Map.copyOf(fieldCalls), Map.copyOf(fieldInits), Set.copyOf(enumLoads), Map.copyOf(switchMapLoads),
-        Set.copyOf(indexShifted), Set.copyOf(maybeShifted));
+        Set.copyOf(indexShifted), Set.copyOf(maybeShifted), Map.copyOf(keyShifted));
       LockFacts lockFacts = new LockFacts(List.copyOf(accesses), List.copyOf(edges), List.copyOf(lockedCalls), Map.copyOf(acquired),
         Set.copyOf(heldAtReturn), Map.copyOf(reacquired));
       calls.addAll(lambdaRefs);
@@ -894,6 +904,9 @@ public final class BytecodeScanner implements Opcodes {
           if ("I:-1".equals(top.origin())) {
             mayReturnMinusOne = true;
           }
+          if ("I:0".equals(top.origin()) && op == IRETURN) {
+            mayReturnZero = true;
+          }
         }
       }
       if (op == ARETURN) {
@@ -986,6 +999,13 @@ public final class BytecodeScanner implements Opcodes {
           String o = f.getStack(sp - 1 - a).origin();
           if (o != null && (o.startsWith("field:") || o.startsWith("static:"))) {
             fieldEscapes.add(o.substring(o.indexOf(':') + 1));
+          }
+        }
+        if (hasReceiver && argc >= 1 && KEY_LOOKUPS.contains(mi.name) && mi.desc.startsWith("(Ljava/lang/Object;")) {
+          V receiver = f.getStack(sp - 1 - argc);
+          V key = f.getStack(sp - argc);
+          if (receiver.origin() != null && receiver.origin().startsWith("field:") && key.local() >= 0) {
+            keyUses.putIfAbsent(key.local(), receiver.origin().substring(6));
           }
         }
         if (hasReceiver && !mi.name.equals("<init>")) {

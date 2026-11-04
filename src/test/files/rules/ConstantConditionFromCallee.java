@@ -15,4 +15,16 @@ class Flags {
       System.out.println("debug");
     }
   }
+
+  void chars(char c) {
+    if ('\u0000' <= c && c <= 'z') { // Noncompliant
+      System.out.println(c);
+    }
+    if (c >= 'a') {
+      System.out.println(c);
+    }
+    if (false) { // Noncompliant
+      System.out.println("never");
+    }
+  }
 }

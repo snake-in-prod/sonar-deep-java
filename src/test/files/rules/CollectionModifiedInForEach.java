@@ -40,3 +40,26 @@ class Iter {
     }
   }
 }
+
+class Registry {
+  private final java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+
+  void prune() {
+    for (String k : counts.keySet()) {
+      drop(k); // Noncompliant
+    }
+  }
+
+  private void drop(String k) {
+    counts.remove(k);
+  }
+
+  void evict(CacheMap<String, String> c) {
+    for (String k : c.keySet()) {
+      c.remove(k); // Noncompliant
+    }
+  }
+}
+
+class CacheMap<K, V> extends java.util.HashMap<K, V> {
+}

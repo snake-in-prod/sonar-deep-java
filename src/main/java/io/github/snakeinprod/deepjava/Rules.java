@@ -64,7 +64,7 @@ public final class Rules {
    * benchmark in the README). They stay available for teams that want them.
    */
   public static final java.util.Set<String> NOT_IN_DEFAULT_PROFILE = java.util.Set.of(
-    FindingChecks.IgnoredResult.KEY, FindingChecks.MissingSuperCall.KEY, FindingChecks.UncheckedInEntryPoint.KEY);
+    FindingChecks.IgnoredResult.KEY, FindingChecks.MissingSuperCall.KEY);
 
   public static final List<Spec> ALL = List.of(
     // 1. nullness
@@ -234,6 +234,15 @@ public final class Rules {
       "A <code>Pattern</code> flag does nothing for that regex (<code>MULTILINE</code> without anchors, <code>UNICODE_CASE</code> "
         + "without <code>CASE_INSENSITIVE</code>...) or conflicts with another flag (<code>LITERAL</code>).",
       "Pattern.compile(\"a.b\", Pattern.MULTILINE); // Noncompliant", RegexFlagsCheck::new),
+    bug(RegexPitfallCheck.KEY, "Regex literals should say what they mean", cwe(185),
+      "A regex contains a class of one element (<code>[\\d]</code>), alternatives of single characters (<code>(^|-)</code>), or, in "
+        + "<code>replaceFirst</code>/<code>replaceAll</code>/<code>split</code>, a \".\" that reads as a literal dot but matches any "
+        + "character.",
+      "name.replaceFirst(\".txt\", \"\"); // Noncompliant: also removes \"atxt\"", RegexPitfallCheck::new),
+    bug(UnrelatedKeyTypeCheck.KEY, "Lookups should use a key of the collection's key type", cwe(),
+      "A map or collection is searched with a value of an unrelated type (a <code>Integer</code> in a <code>Map&lt;Long, V&gt;</code>), "
+        + "directly or through a project method that looks its parameter up in a field map: the lookup never matches.",
+      "Map<Long, User> users = ...;\nusers.get(id); // Noncompliant: id is an int", UnrelatedKeyTypeCheck::new),
     test(AssertionAfterThrowCheck.KEY, "Assertions should not follow a call that always throws",
       "An assertion follows a call that always throws, so it never runs.",
       "service.failFast();\nassertEquals(1, count); // Noncompliant", AssertionAfterThrowCheck::new),

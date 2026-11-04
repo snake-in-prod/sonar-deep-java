@@ -65,3 +65,58 @@ class Geometry {
     return dx + dy;
   }
 }
+
+class Person {
+  private String name;
+  private String email;
+  private String phone;
+  private String fooType;
+
+  String getName() {
+    return name;
+  }
+
+  String getEmail() {
+    return email;
+  }
+
+  String getPhone() {
+    return phone;
+  }
+
+  String getFooType() {
+    return fooType;
+  }
+
+  void setName(String v) {
+    name = v;
+  }
+
+  void setEmail(String v) {
+    email = v;
+  }
+
+  void setPhone(String v) {
+    phone = v;
+  }
+}
+
+class Merge {
+  void merge(Person copy, Person src, Person other) {
+    copy.setName(src.getName());
+    copy.setEmail(other.getEmail()); // Noncompliant
+    copy.setPhone(src.getPhone());
+  }
+
+  void groups(Person copy, Person a, Person b) {
+    copy.setName(a.getName());
+    copy.setEmail(b.getEmail());
+    copy.setPhone(b.getPhone());
+  }
+
+  String types(Person p) {
+    String fooType = p.getFooType();
+    String nonFooType = p.getFooType(); // Noncompliant
+    return fooType + nonFooType;
+  }
+}

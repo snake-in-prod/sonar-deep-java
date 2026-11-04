@@ -28,3 +28,10 @@ class SafeWorker implements Runnable {
     }
   }
 }
+
+class Cli {
+  public static void main(String[] args) {
+    java.util.Scanner in = new java.util.Scanner(System.in); // Noncompliant
+    System.out.println(in.nextInt() + java.util.List.of("a").iterator().next());
+  }
+}

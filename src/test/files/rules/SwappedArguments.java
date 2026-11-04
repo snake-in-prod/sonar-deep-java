@@ -18,3 +18,19 @@ class Mover {
     return b < c;
   }
 }
+
+class Relation {
+  Relation(String source, String target) {
+    System.out.println(source + target);
+  }
+}
+
+class Graph {
+  Relation link(String source, String target) {
+    return new Relation(target, source); // Noncompliant
+  }
+
+  Relation same(String source, String target) {
+    return new Relation(source, target);
+  }
+}

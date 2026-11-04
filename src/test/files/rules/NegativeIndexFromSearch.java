@@ -35,4 +35,17 @@ class Search {
   String fromList(List<String> l) {
     return l.get(l.indexOf("a")); // Noncompliant
   }
+
+  int firstFree(int[] slots) {
+    for (int i = 0; i < slots.length; i++) {
+      if (slots[i] == 0) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  int take(int[] slots) {
+    return slots[firstFree(slots)]; // Noncompliant
+  }
 }

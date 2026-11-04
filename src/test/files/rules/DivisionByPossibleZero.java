@@ -23,3 +23,41 @@ class Averages {
     return total / items.size();
   }
 }
+
+class PageRequest {
+  private int pageSize;
+
+  int getPageSize() {
+    return pageSize;
+  }
+}
+
+class Pager {
+  int pages(PageRequest request, int total) {
+    return total / request.getPageSize(); // Noncompliant
+  }
+
+  int counted(String s) {
+    if (s.isEmpty()) {
+      return 0;
+    }
+    return s.length();
+  }
+
+  int ratio(String s, int total) {
+    return total / counted(s); // Noncompliant
+  }
+
+  int ratioLocal(String s, int total) {
+    int c = counted(s);
+    return total / c; // Noncompliant
+  }
+
+  int seven() {
+    return 7;
+  }
+
+  int nonZero(int total) {
+    return total / seven();
+  }
+}

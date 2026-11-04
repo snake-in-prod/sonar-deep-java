@@ -32,7 +32,10 @@ public class TimingUnsafeSecretComparisonCheck extends DeepCheck {
     MethodInvocationTree mit = (MethodInvocationTree) tree;
     ExpressionTree a;
     ExpressionTree b;
-    if (Trees.isCall(mit, "java.lang.String", "equals", "contentEquals") && mit.arguments().size() == 1 && Trees.receiver(mit) != null) {
+    boolean unresolvedEquals = mit.methodSymbol().isUnknown() && "equals".equals(Trees.name(mit));
+    // a lambda parameter of an unresolved library interface (an authenticator callback) has no known type
+    if ((Trees.isCall(mit, "java.lang.String", "equals", "contentEquals") || unresolvedEquals) && mit.arguments().size() == 1
+      && Trees.receiver(mit) != null) {
       a = Trees.receiver(mit);
       b = mit.arguments().get(0);
     } else if (Trees.isCall(mit, "java.util.Arrays", "equals") && mit.arguments().size() == 2) {
@@ -59,6 +62,12 @@ public class TimingUnsafeSecretComparisonCheck extends DeepCheck {
 
   private static boolean isSecret(ExpressionTree e) {
     e = Trees.skip(e);
+    // new String(password), String.valueOf(password)
+    if (e instanceof org.sonar.plugins.java.api.tree.NewClassTree nc && nc.arguments().size() == 1) {
+      e = Trees.skip(nc.arguments().get(0));
+    } else if (e instanceof MethodInvocationTree m && "valueOf".equals(Trees.name(m)) && m.arguments().size() == 1) {
+      e = Trees.skip(m.arguments().get(0));
+    }
     String name = e instanceof IdentifierTree id ? id.name()
       : e instanceof MemberSelectExpressionTree ms ? ms.identifier().name()
       : e instanceof MethodInvocationTree m ? Trees.name(m) : "";

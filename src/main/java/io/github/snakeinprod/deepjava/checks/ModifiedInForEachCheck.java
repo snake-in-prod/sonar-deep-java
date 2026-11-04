@@ -44,20 +44,58 @@ public class ModifiedInForEachCheck extends DeepCheck {
       iterated = Trees.receiver(view);
       mapView = true;
     }
-    String type = iterated.symbolType().fullyQualifiedName();
-    // only JDK collections: a project collection may iterate over a copy
-    if (Trees.symbol(iterated) == null || !type.startsWith("java.util.") || type.matches(".*(Concurrent|CopyOnWrite).*")) {
+    if (!iterable(iterated, mapView)) {
       return;
     }
     for (MethodInvocationTree m : Trees.collect(loop.statement(), MethodInvocationTree.class)) {
       String n = Trees.name(m);
-      boolean mutates = mapView ? Set.of("remove", "clear", "put", "putAll").contains(n) : MUTATORS.contains(n);
+      boolean mutates = mapView ? MAP_MUTATORS.contains(n) : MUTATORS.contains(n);
       if (mutates && Trees.receiver(m) != null && Trees.same(Trees.receiver(m), iterated) && !leavesLoop(m)
         && !(mapView && "put".equals(n) && putsSameKey(m, loop))) {
         reportIssue(m, "\"" + n + "()\" changes the collection that this loop iterates: the next iteration throws "
           + "ConcurrentModificationException. Use an Iterator or removeIf().");
+      } else if (mapView && Trees.receiver(m) == null && !leavesLoop(m)) {
+        String helper = modifiesInHelper(m, Trees.symbol(iterated));
+        if (helper != null) {
+          reportIssue(m, "\"" + Trees.name(m) + "()\" calls \"" + helper + "()\" on the map that this loop iterates: the next "
+            + "iteration throws ConcurrentModificationException.");
+        }
       }
     }
+  }
+
+  private static final Set<String> MAP_MUTATORS = Set.of("remove", "clear", "put", "putAll");
+
+  /**
+   * JDK collections (a project collection may iterate over a copy); for map views any {@code Map}, distributed caches
+   * included. Concurrent collections iterate weakly consistently, except in parity mode.
+   */
+  private boolean iterable(ExpressionTree iterated, boolean mapView) {
+    String type = iterated.symbolType().fullyQualifiedName();
+    if (Trees.symbol(iterated) == null) {
+      return false;
+    }
+    boolean jdk = type.startsWith("java.util.") || mapView && iterated.symbolType().isSubtypeOf("java.util.Map");
+    return jdk && (summaries.get().options().referenceParity() || !type.matches(".*(Concurrent|CopyOnWrite).*"));
+  }
+
+  /** {@code helper()} of this class puts into or removes from the field map being iterated, or null. */
+  private String modifiesInHelper(MethodInvocationTree call, org.sonar.plugins.java.api.semantic.Symbol map) {
+    if (!Trees.isField(map) || call.methodSymbol().isUnknown() || !call.methodSymbol().owner().equals(map.owner())) {
+      return null;
+    }
+    String key = Trees.callKey(call.methodSymbol());
+    List<Summaries.Method> targets = key == null ? List.of() : summaries.get().targets(key);
+    String field = map.owner().type().erasure().fullyQualifiedName().replace('.', '/') + "#" + map.name();
+    for (Summaries.Method t : targets) {
+      for (String c : t.facts().uses().fieldCalls().getOrDefault(field, Set.of())) {
+        String name = c.substring(0, c.indexOf('@'));
+        if (MAP_MUTATORS.contains(name)) {
+          return name;
+        }
+      }
+    }
+    return null;
   }
 
   /** {@code map.put(key, ...)} for the key being visited only replaces a value: not a structural change. */
@@ -92,17 +130,16 @@ public class ModifiedInForEachCheck extends DeepCheck {
       iterated = Trees.receiver(view);
       mapView = true;
     }
-    String type = iterated.symbolType().fullyQualifiedName();
-    if (Trees.symbol(iterated) == null || !type.startsWith("java.util.") || type.matches(".*(Concurrent|CopyOnWrite).*")) {
+    if (!iterable(iterated, mapView || iterated.symbolType().isSubtypeOf("java.util.Map"))) {
       return;
     }
     final ExpressionTree it = iterated;
-    final boolean view = mapView || type.matches("java\\.util\\..*Map");
+    final boolean view = mapView || iterated.symbolType().isSubtypeOf("java.util.Map");
     lambda.body().accept(new org.sonar.plugins.java.api.tree.BaseTreeVisitor() {
       @Override
       public void visitMethodInvocation(MethodInvocationTree m) {
         String n = Trees.name(m);
-        boolean mutates = view ? Set.of("remove", "clear", "put", "putAll").contains(n) : MUTATORS.contains(n);
+        boolean mutates = view ? MAP_MUTATORS.contains(n) : MUTATORS.contains(n);
         if (mutates && Trees.receiver(m) != null && Trees.same(Trees.receiver(m), it)) {
           reportIssue(m, "\"" + n + "()\" changes the collection that forEach() iterates: it throws ConcurrentModificationException.");
         }

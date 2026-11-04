@@ -28,4 +28,12 @@ class Tokens {
   boolean bytes(byte[] signature, byte[] computed) {
     return java.util.Arrays.equals(signature, computed); // Noncompliant
   }
+
+  interface Authenticator {
+    boolean authenticate(String user, char[] password);
+  }
+
+  Authenticator basic(String configured) {
+    return (user, password) -> new String(password).equals(configured); // Noncompliant
+  }
 }

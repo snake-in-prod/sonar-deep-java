@@ -101,6 +101,9 @@ final class ProjectAnalyses implements Opcodes {
 
   // ------------------------------------------------------------------ 5a ignored results
 
+  private static final java.util.regex.Pattern PURE_JDK =
+    java.util.regex.Pattern.compile("java/lang/(Integer|Long|Short|Byte|Double|Float|Boolean|String)|java/math/Big\\w+|java/time/\\w+|java/util/UUID");
+
   private void ignoredResults() {
     Map<String, Integer> used = new HashMap<>();
     Map<String, List<Object[]>> ignored = new HashMap<>();
@@ -110,8 +113,11 @@ final class ProjectAnalyses implements Opcodes {
     }
     ignored.forEach((k, sites) -> {
       Summaries.Call c = Summaries.parse(k);
-      // only project methods: JDK results such as Iterator.next() are often skipped on purpose
-      if (c.desc().endsWith(")L" + c.owner() + ";") || c.desc().endsWith(")Ljava/lang/Object;") || s.targets(k).isEmpty() || s.neverReturns(k)) {
+      // project methods and side-effect-free JDK values (Integer.parseInt() called only to validate); other JDK
+      // results such as Iterator.next() are often skipped on purpose
+      boolean pureJdk = PURE_JDK.matcher(c.owner()).matches() && !c.desc().endsWith(")V");
+      if (!pureJdk && (c.desc().endsWith(")L" + c.owner() + ";") || c.desc().endsWith(")Ljava/lang/Object;") || s.targets(k).isEmpty()
+        || s.neverReturns(k))) {
         return;
       }
       int u = used.getOrDefault(k, 0);
@@ -362,7 +368,7 @@ final class ProjectAnalyses implements Opcodes {
     if (depth < 6) {
       for (CallSite cs : m.facts().ex().calls()) {
         List<Method> targets = s.targets(cs.callKey());
-        if (targets.size() <= 2) {
+        if (targets.size() <= t.maxTargets()) {
           targets.forEach(tm -> out.addAll(acquired(tm, depth + 1)));
         }
       }
@@ -411,7 +417,7 @@ final class ProjectAnalyses implements Opcodes {
       }
       for (LockedCall lc : m.facts().locks().lockedCalls()) {
         List<Method> targets = s.targets(lc.callKey());
-        if (targets.size() > 2) {
+        if (targets.size() > t.maxTargets()) {
           continue;
         }
         for (Method target : targets) {

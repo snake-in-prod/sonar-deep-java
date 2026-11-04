@@ -12,4 +12,16 @@ class Ternary {
   int g(int x, int y, int z) {
     return (x == y ? 1 : 0) + z;
   }
+
+  int k(int a, int b, int c, int x, int y) {
+    return a + b - 1 < c ? x : y; // Noncompliant
+  }
+
+  int m(int x, int a, int b) {
+    return x % 2 == 0 ? a + 1 : b; // Noncompliant
+  }
+
+  int plain(int i, int n, int a, int b) {
+    return i + 1 < n ? a : b;
+  }
 }

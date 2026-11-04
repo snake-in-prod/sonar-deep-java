@@ -40,3 +40,27 @@ class Accounts {
     }
   }
 }
+
+class Ledger {
+  private Journal journal;
+
+  synchronized void post() {
+    journal.record();
+  }
+
+  synchronized void close() {
+    System.out.println("closed");
+  }
+}
+
+class Journal {
+  private Ledger ledger;
+
+  synchronized void record() {
+    System.out.println("recorded");
+  }
+
+  synchronized void flush() {
+    ledger.close(); // Noncompliant
+  }
+}

@@ -25,11 +25,20 @@ public class ResourceFromHelperCheck extends DeepCheck {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.METHOD_INVOCATION);
+    return List.of(Tree.Kind.METHOD_INVOCATION, Tree.Kind.NEW_CLASS);
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if (tree instanceof org.sonar.plugins.java.api.tree.NewClassTree nc) {
+      // new GZIPInputStream(in) ... gz.close() outside finally: lost (with "in") when a call in between throws
+      org.sonar.plugins.java.api.semantic.Type t = nc.symbolType();
+      if (ROOTS.stream().anyMatch(r -> t.isSubtypeOf(r.replace('/', '.').replace('$', '.'))) && isRealResource(t.fullyQualifiedName())
+        && nc.parent() instanceof VariableTree v && Trees.isLocal(v.symbol()) && !v.parent().is(Tree.Kind.LIST)) {
+        lostOnException(v, "\"new " + t.name() + "()\" creates a \"" + t.name() + "\"");
+      }
+      return;
+    }
     MethodInvocationTree mit = (MethodInvocationTree) tree;
     Symbol.MethodSymbol sym = mit.methodSymbol();
     if (sym.isUnknown() || ROOTS.stream().noneMatch(r -> sym.returnType().type().isSubtypeOf(r.replace('/', '.').replace('$', '.')))
@@ -60,7 +69,7 @@ public class ResourceFromHelperCheck extends DeepCheck {
       if (neverReleased(v.symbol())) {
         reportIssue(v.simpleName(), message);
       } else {
-        lostOnException(v, targets.get(0).display(), type);
+        lostOnException(v, "\"" + targets.get(0).display() + "\" returns a new \"" + type + "\"");
       }
     }
   }
@@ -97,7 +106,7 @@ public class ResourceFromHelperCheck extends DeepCheck {
    * Released only by a {@code close()} outside {@code finally}, with calls in between that can throw: the resource
    * is lost on that exception edge.
    */
-  private void lostOnException(VariableTree v, String helper, String type) {
+  private void lostOnException(VariableTree v, String what) {
     List<IdentifierTree> usages = v.symbol().usages();
     IdentifierTree close = null;
     for (IdentifierTree u : usages) {
@@ -114,7 +123,7 @@ public class ResourceFromHelperCheck extends DeepCheck {
     int closeLine = Trees.line(close);
     for (int i = from + 1; i < block.body().size() && Trees.line(block.body().get(i)) < closeLine; i++) {
       if (Trees.any(block.body().get(i), MethodInvocationTree.class, m -> true)) {
-        reportIssue(v.simpleName(), "\"" + helper + "\" returns a new \"" + type + "\" that is not closed if an exception is thrown "
+        reportIssue(v.simpleName(), what + " that is not closed if an exception is thrown "
           + "before the close() at line " + closeLine + "; use try-with-resources.");
         return;
       }

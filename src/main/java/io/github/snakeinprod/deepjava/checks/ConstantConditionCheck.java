@@ -42,6 +42,17 @@ public class ConstantConditionCheck extends DeepCheck {
     if (cond == null) {
       return;
     }
+    if (Trees.skip(cond).is(Tree.Kind.BOOLEAN_LITERAL) && tree instanceof IfStatementTree) {
+      reportIssue(cond, "This condition is always " + ((org.sonar.plugins.java.api.tree.LiteralTree) Trees.skip(cond)).value()
+        + ": the branch is dead code or unconditional.");
+      return;
+    }
+    for (BinaryExpressionTree c : Trees.collect(cond, BinaryExpressionTree.class)) {
+      Boolean always = charRange(c);
+      if (always != null) {
+        reportIssue(c, "This comparison is always " + always + ": a char is never below '\\u0000' or above '\\uffff'.");
+      }
+    }
     boolean negated = false;
     ExpressionTree e = Trees.skip(cond);
     while (e instanceof UnaryExpressionTree u && e.is(Tree.Kind.LOGICAL_COMPLEMENT)) {
@@ -64,6 +75,43 @@ public class ConstantConditionCheck extends DeepCheck {
   }
 
   private record Constant(String value, String why) {
+  }
+
+  /** {@code '\\u0000' <= c}, {@code c >= 0}, {@code c < 0}, {@code c <= '\\uffff'} on a char: constant. */
+  private static Boolean charRange(BinaryExpressionTree b) {
+    if (!b.is(Tree.Kind.LESS_THAN, Tree.Kind.LESS_THAN_OR_EQUAL_TO, Tree.Kind.GREATER_THAN, Tree.Kind.GREATER_THAN_OR_EQUAL_TO)) {
+      return null;
+    }
+    boolean charLeft = Trees.skip(b.leftOperand()).symbolType().is("char") && !b.leftOperand().asConstant().isPresent();
+    boolean charRight = Trees.skip(b.rightOperand()).symbolType().is("char") && !b.rightOperand().asConstant().isPresent();
+    Integer k = constantInt(charLeft ? b.rightOperand() : charRight ? b.leftOperand() : null);
+    if (k == null || charLeft == charRight) {
+      return null;
+    }
+    // normalise to "c OP k"
+    Tree.Kind op = b.kind();
+    if (charRight) {
+      op = switch (op) {
+        case LESS_THAN -> Tree.Kind.GREATER_THAN;
+        case LESS_THAN_OR_EQUAL_TO -> Tree.Kind.GREATER_THAN_OR_EQUAL_TO;
+        case GREATER_THAN -> Tree.Kind.LESS_THAN;
+        default -> Tree.Kind.LESS_THAN_OR_EQUAL_TO;
+      };
+    }
+    return switch (op) {
+      case GREATER_THAN_OR_EQUAL_TO -> k <= 0 ? Boolean.TRUE : k > 0xFFFF ? Boolean.FALSE : null;
+      case GREATER_THAN -> k < 0 ? Boolean.TRUE : k >= 0xFFFF ? Boolean.FALSE : null;
+      case LESS_THAN -> k <= 0 ? Boolean.FALSE : k > 0xFFFF ? Boolean.TRUE : null;
+      default -> k < 0 ? Boolean.FALSE : k >= 0xFFFF ? Boolean.TRUE : null;
+    };
+  }
+
+  private static Integer constantInt(ExpressionTree e) {
+    if (e == null) {
+      return null;
+    }
+    Object v = e.asConstant().orElse(null);
+    return v instanceof Character ch ? Integer.valueOf(ch) : v instanceof Integer i ? i : null;
   }
 
   private void report(ExpressionTree cond, boolean always, String why) {
