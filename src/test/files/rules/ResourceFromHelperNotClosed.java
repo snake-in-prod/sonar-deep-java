@@ -57,4 +57,15 @@ class Streams {
       return gz.read();
     }
   }
+
+  java.nio.channels.FileChannel channel(java.io.File f) throws IOException {
+    java.io.RandomAccessFile raf = new java.io.RandomAccessFile(f, "rw");
+    try {
+      raf.setLength(10);
+      return raf.getChannel();
+    } catch (IOException e) {
+      raf.close();
+      throw e;
+    }
+  }
 }

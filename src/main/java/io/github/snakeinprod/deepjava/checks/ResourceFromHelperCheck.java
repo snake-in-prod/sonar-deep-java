@@ -132,7 +132,9 @@ public class ResourceFromHelperCheck extends DeepCheck {
 
   private static boolean inFinally(Tree t) {
     for (Tree child = t, p = t.parent(); p != null; child = p, p = p.parent()) {
-      if (p instanceof org.sonar.plugins.java.api.tree.TryStatementTree ts && ts.finallyBlock() == child) {
+      // finally, or a catch that closes and rethrows: the exception edge is covered
+      if (p instanceof org.sonar.plugins.java.api.tree.TryStatementTree ts && ts.finallyBlock() == child
+        || p instanceof org.sonar.plugins.java.api.tree.CatchTree) {
         return true;
       }
     }

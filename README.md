@@ -219,38 +219,47 @@ the cases that cross methods.
 
 ### Real projects
 
-Mature libraries, analysed from their Maven Central class and source jars on SonarQube 26.7 with all rules.
-Every issue was reviewed by hand.
+Mature libraries, analysed from their Maven Central class and source jars on SonarQube 26.10 with the default
+profile and `sonar.deepjava.referenceParity=false`. Every issue was reviewed by hand.
 
-| Project | Classes | Issues |
-|---|--:|--:|
-| commons-lang3 3.21.0 | 439 | 1 |
-| commons-io 2.22.0 | 428 | 4 |
-| jackson-databind 2.22.4 | 813 | 2 |
-| kafka-clients 4.4.0 | 4345 | 21 |
+| Project | Classes | Issues 0.3.0 | Issues 0.4.0 |
+|---|--:|--:|--:|
+| commons-lang3 3.21.0 | 439 | 1 | 3 |
+| commons-io 2.22.0 | 428 | 4 | 4 |
+| jackson-databind 2.22.4 | 813 | 2 | 3 |
+| kafka-clients 4.4.0 | 4345 | 21 | 34 |
 
-By rule (default profile):
+By rule, 0.4.0:
 
 | Rule | Issues | True positive | False positive | Not confirmed |
 |---|--:|--:|--:|--:|
 | `InconsistentLocking` | 13 | 5 | 0 | 8 |
-| `NullReturnDereference` | 5 | 1 | 4 | 0 |
+| `TaintedSize` | 12 | 0 | 0 | 12 |
+| `NullReturnDereference` | 7 | 1 | 6 | 0 |
 | `DivisionByPossibleZero` | 3 | 0 | 0 | 3 |
-| `TaintedSize` | 3 | 0 | 0 | 3 |
+| `RegexPitfall` | 3 | 3 | 0 | 0 |
 | `NegativeIndexFromSearch` | 2 | 0 | 2 | 0 |
+| `UncheckedExceptionInEntryPoint` | 2 | 0 | 0 | 2 |
 | `NullPassedToDereferencedParameter` | 1 | 1 | 0 | 0 |
 | `SecretLeak` | 1 | 0 | 1 | 0 |
-| other 45 rules | 0 | | | |
+| other 49 rules | 0 | | | |
 
 - True positives: fields read or written without the lock that guards them everywhere else (in commons-io a
   `long` read without the lock is not even atomic), `null` passed to a Jackson method that dereferences that
-  parameter, a nullable `getAccessor()` result used without a check.
+  parameter, a nullable `getAccessor()` result used without a check, regex classes of one element (`[T]`, `[\w]`)
+  and single-character alternatives (`(L|U)`).
 - False positives: `Map.get(CONSTANT)` on Kafka configuration maps that Kafka fills with defaults,
+  `TypeUtils.getTypeArguments()` (documented to return null for unassignable types) called with assignable types,
   `lastIndexOf`/`indexOf` results whose presence was established just before, a blank client secret put into an
   exception message.
 - Not confirmed: Kafka coordinator and batch fields that Kafka documents as accessed from one thread; divisions by
-  partition and consumer counts that Kafka's callers keep above 0; loop bounds and list sizes read from protocol
-  buffers (the pattern of ADR 0002 F: an attacker-sized count, bounded only by the buffer).
+  partition and consumer counts that Kafka's callers keep above 0; loop bounds, allocations and list sizes read from
+  protocol buffers and varints (ADR 0002 F: an attacker-sized count, bounded only by the buffer); a
+  `NumberFormatException` from parsing a broker address that can end a network thread.
+- What 0.4.0 added on these libraries comes from ADR 0002 groups C, F and H (null collections, protocol sizes,
+  regex, entry points); no other rule raises more than in 0.3.0.
+
+The OWASP Benchmark scores are unchanged from 0.3.0.
 
 The rules outside the default profile reported 9 issues on the same libraries, none of them a defect.
 Before the precision work, the first run of 0.1 reported 840 issues.

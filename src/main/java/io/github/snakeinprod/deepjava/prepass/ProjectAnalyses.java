@@ -493,8 +493,9 @@ final class ProjectAnalyses implements Opcodes {
       }
       Summaries.Call c = Summaries.parse(cs.callKey());
       String ex = s.models().uncheckedThrow(c.owner(), c.name(), c.desc());
-      if (ex != null && depth > 0 && ex.equals("java/util/NoSuchElementException") && !s.options().referenceParity()) {
-        // Iterator.next() / Optional.get() deep in a callee is mostly guarded there (hasNext, isPresent)
+      if (ex != null && ex.equals("java/util/NoSuchElementException") && !s.options().referenceParity()
+        && (depth > 0 || "next".equals(c.name()) && s.hierarchy().selfAndSupertypes(c.owner()).contains("java/util/Iterator"))) {
+        // Optional.get() deep in a callee is mostly guarded there (isPresent); Iterator.next() mostly by a for-each's hasNext()
         ex = null;
       }
       if (ex != null && !caught(cs.caught(), ex)) {
