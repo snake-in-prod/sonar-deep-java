@@ -90,15 +90,16 @@ public record ClassFacts(String name, String superName, List<String> interfaces,
    * @param enumLoads       enum constants (owner#name) loaded, excluding switch-map initialisers
    * @param switchMapLoads  enum constants loaded by a switch-map initialiser, to a line
    * @param indexParams     int parameters used as an index without being compared first
+   * @param maybeDerefParams parameters dereferenced on some path and never compared to null (nor reassigned)
    */
   public record UseFacts(Map<String, Integer> callSites, Map<String, Integer> nullChecks, Map<String, Integer> valueSites,
     Map<String, List<Integer>> ignoredResults, Set<Integer> derefParams, Set<Integer> closedParams, boolean callsSuper,
     Map<String, Integer> staticWrites, Set<String> fieldWrites, Set<String> fieldEscapes, Map<String, Set<String>> fieldCalls,
-    Map<String, String> fieldInits, Set<String> enumLoads, Map<String, Integer> switchMapLoads, Set<Integer> indexParams)
-    implements Serializable {
+    Map<String, String> fieldInits, Set<String> enumLoads, Map<String, Integer> switchMapLoads, Set<Integer> indexParams,
+    Set<Integer> maybeDerefParams) implements Serializable {
 
     static final UseFacts EMPTY = new UseFacts(Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Set.of(), false, Map.of(),
-      Set.of(), Set.of(), Map.of(), Map.of(), Set.of(), Map.of(), Set.of());
+      Set.of(), Set.of(), Map.of(), Map.of(), Set.of(), Map.of(), Set.of(), Set.of());
   }
 
   public record FieldAccess(String field, boolean write, int line, Set<String> locks) implements Serializable {

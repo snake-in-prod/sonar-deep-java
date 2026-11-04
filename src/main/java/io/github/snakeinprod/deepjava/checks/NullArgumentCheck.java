@@ -43,15 +43,18 @@ public class NullArgumentCheck extends DeepCheck {
     }
     for (int i = 0; i < mit.arguments().size(); i++) {
       int index = i;
-      if (!targets.stream().allMatch(t -> t.facts().uses().derefParams().contains(index))) {
+      boolean everyPath = targets.stream().allMatch(t -> t.facts().uses().derefParams().contains(index));
+      boolean somePath = targets.stream().allMatch(t -> t.facts().uses().maybeDerefParams().contains(index));
+      ExpressionTree arg = mit.arguments().get(i);
+      if (!everyPath && !(somePath && Trees.skip(arg).is(Tree.Kind.NULL_LITERAL))) {
         continue;
       }
-      String why = nullWhy(s, mit.arguments().get(i));
+      String why = nullWhy(s, arg);
       if (why != null) {
         List<String> names = targets.get(0).facts().info().paramNames();
         String param = i < names.size() && !names.get(i).isEmpty() ? "\"" + names.get(i) + "\"" : "#" + (i + 1);
-        reportIssue(mit.arguments().get(i), "\"" + targets.get(0).display() + "\" dereferences its parameter " + param
-          + " on every path, but " + why + " is passed here.");
+        reportIssue(arg, "\"" + targets.get(0).display() + "\" dereferences its parameter " + param
+          + (everyPath ? " on every path" : " without a null check") + ", but " + why + " is passed here.");
       }
     }
   }
@@ -61,6 +64,9 @@ public class NullArgumentCheck extends DeepCheck {
     if (a.is(Tree.Kind.NULL_LITERAL)) {
       return "null";
     }
+    if (s.options().referenceParity() && lombokNullCompared(s, a)) {
+      return "a field that the Lombok-generated equals() compares to null";
+    }
     if (a instanceof MethodInvocationTree call) {
       String key = Trees.resolveCallKey(call, s);
       Optional<Summaries.NullReason> r = key == null ? Optional.empty() : s.nullReturn(key);
@@ -69,5 +75,28 @@ public class NullArgumentCheck extends DeepCheck {
       }
     }
     return null;
+  }
+
+  /** A field (or its plain getter) of a class with a Lombok-generated {@code equals}, which null-checks every field. */
+  private static boolean lombokNullCompared(Summaries s, ExpressionTree a) {
+    String field = null;
+    if (a instanceof MethodInvocationTree call && call.arguments().isEmpty()) {
+      String key = Trees.resolveCallKey(call, s);
+      List<Summaries.Method> targets = key == null ? List.of() : s.targets(key);
+      if (targets.size() == 1 && targets.get(0).facts().nulls().returnedFields().size() == 1) {
+        field = targets.get(0).facts().nulls().returnedFields().iterator().next();
+      }
+    } else {
+      Symbol f = Trees.symbol(a);
+      if (Trees.isField(f) && !f.type().isPrimitive() && !f.isStatic()) {
+        field = f.owner().type().erasure().fullyQualifiedName().replace('.', '/') + "#" + f.name();
+      }
+    }
+    if (field == null) {
+      return false;
+    }
+    io.github.snakeinprod.deepjava.prepass.ClassFacts owner = s.classes().get(field.substring(0, field.indexOf('#')));
+    return owner != null && owner.methods().containsKey("canEqual(Ljava/lang/Object;)Z")
+      && owner.fields().containsKey(field.substring(field.indexOf('#') + 1));
   }
 }

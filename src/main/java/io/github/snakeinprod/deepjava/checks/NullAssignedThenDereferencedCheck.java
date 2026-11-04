@@ -21,6 +21,15 @@ public class NullAssignedThenDereferencedCheck extends DeepCheck {
 
   public static final String KEY = "NullAssignedThenDereferenced";
 
+  /** Nested {@code if}s see the same assignment from each enclosing block: report a dereference once. */
+  private final Set<Tree> reported = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+  @Override
+  public void setContext(org.sonar.plugins.java.api.JavaFileScannerContext context) {
+    reported.clear();
+    super.setContext(context);
+  }
+
   public NullAssignedThenDereferencedCheck(Supplier<Summaries> summaries) {
     super(summaries);
   }
@@ -32,7 +41,8 @@ public class NullAssignedThenDereferencedCheck extends DeepCheck {
 
   @Override
   public void visitNode(Tree tree) {
-    List<StatementTree> body = ((BlockTree) tree).body();
+    BlockTree block = (BlockTree) tree;
+    List<StatementTree> body = block.body();
     List<Set<Symbol>> assigned = null;
     for (int k = 0; k < body.size(); k++) {
       StatementTree s = body.get(k);
@@ -47,8 +57,28 @@ public class NullAssignedThenDereferencedCheck extends DeepCheck {
         if (assigned == null) {
           assigned = Trees.assignedPerStatement(body);
         }
-        checkAfter(body, assigned, k, var, Trees.line(a));
+        if (!checkAfter(body, assigned, k, var, Trees.line(a))) {
+          checkEnclosing(block, var, Trees.line(a));
+        }
       }
+    }
+  }
+
+  /** Nothing decided in the block: go on after the statement that encloses it ({@code if}, loop, {@code try}). */
+  private void checkEnclosing(BlockTree block, Symbol var, int line) {
+    Tree t = block;
+    while (t.parent() != null && !(t.parent() instanceof BlockTree)) {
+      t = t.parent();
+      if (t.is(Tree.Kind.METHOD, Tree.Kind.CONSTRUCTOR, Tree.Kind.LAMBDA_EXPRESSION, Tree.Kind.CLASS)) {
+        return;
+      }
+    }
+    if (!(t.parent() instanceof BlockTree outer) || !(t instanceof StatementTree st)) {
+      return;
+    }
+    List<StatementTree> body = outer.body();
+    if (!checkAfter(body, Trees.assignedPerStatement(body), body.indexOf(st), var, line)) {
+      checkEnclosing(outer, var, line);
     }
   }
 
@@ -67,27 +97,35 @@ public class NullAssignedThenDereferencedCheck extends DeepCheck {
     return true;
   }
 
-  private void checkAfter(List<StatementTree> body, List<Set<Symbol>> assigned, int k, Symbol var, int line) {
+  /** Whether a later statement decides the case: a null check, a dereference (reported) or a new assignment. */
+  private boolean checkAfter(List<StatementTree> body, List<Set<Symbol>> assigned, int k, Symbol var, int line) {
     for (int j = k + 1; j < body.size(); j++) {
       StatementTree later = body.get(j);
       boolean checked = Trees.any(later, BinaryExpressionTree.class, b -> b.is(Tree.Kind.EQUAL_TO, Tree.Kind.NOT_EQUAL_TO)
         && (b.leftOperand().is(Tree.Kind.NULL_LITERAL) && var.equals(Trees.symbol(b.rightOperand()))
           || b.rightOperand().is(Tree.Kind.NULL_LITERAL) && var.equals(Trees.symbol(b.leftOperand()))));
-      if (checked) {
-        return;
+      if (checked || later.is(Tree.Kind.RETURN_STATEMENT, Tree.Kind.THROW_STATEMENT) && !mentions(later, var)) {
+        return true;
       }
       for (Tree t : Trees.collect(later, Tree.class)) {
         ExpressionTree derefd = t instanceof MemberSelectExpressionTree ms ? ms.expression()
           : t instanceof ArrayAccessExpressionTree aa ? aa.expression() : null;
-        if (derefd != null && var.equals(Trees.symbol(derefd)) && Trees.skip(derefd) == derefd && !Trees.isConditional(t, later)
+        if (derefd != null && var.equals(Trees.symbol(derefd)) && Trees.skip(derefd) == derefd && !Trees.assigns(later, var)
           && !(t instanceof MemberSelectExpressionTree m && m.parent() instanceof AssignmentExpressionTree as && as.variable() == m)) {
-          reportIssue(t, "\"" + var.name() + "\" is set to null at line " + line + " on some path and dereferenced here without a check.");
-          return;
+          if (reported.add(t)) {
+            reportIssue(t, "\"" + var.name() + "\" is set to null at line " + line + " on some path and dereferenced here without a check.");
+          }
+          return true;
         }
       }
       if (assigned.get(j).contains(var)) {
-        return;
+        return true;
       }
     }
+    return false;
+  }
+
+  private static boolean mentions(Tree t, Symbol var) {
+    return Trees.any(t, org.sonar.plugins.java.api.tree.IdentifierTree.class, id -> var.equals(id.symbol()));
   }
 }

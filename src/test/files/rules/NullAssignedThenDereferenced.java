@@ -52,4 +52,48 @@ class Folders {
     }
     return f.getName(); // Noncompliant
   }
+
+  String afterLoop(String id, boolean a) {
+    Folder f = find(id);
+    for (int i = 0; i < 3; i++) {
+      if (a) {
+        f = null;
+      }
+    }
+    System.out.println(id);
+    return f.getName(); // Noncompliant
+  }
+
+  String nestedIfs(String id, boolean a, boolean b) {
+    Folder f = find(id);
+    if (a) {
+      if (b) {
+        f = null;
+      }
+    }
+    return f.getName(); // Noncompliant
+  }
+
+  String laterBranch(boolean a, String id) {
+    String name = id.trim();
+    if (a) {
+      name = null;
+    }
+    System.out.println(id);
+    if (id.isEmpty()) {
+      return name.concat("x"); // Noncompliant
+    }
+    return "";
+  }
+
+  String reassignedInBranch(boolean a, String id) {
+    String name = id.trim();
+    if (a) {
+      name = null;
+    }
+    if (name == null) {
+      name = "n";
+    }
+    return name.trim();
+  }
 }

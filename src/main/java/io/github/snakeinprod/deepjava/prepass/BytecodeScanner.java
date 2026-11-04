@@ -492,6 +492,8 @@ public final class BytecodeScanner implements Opcodes {
     private final Set<String> fieldEscapes = new HashSet<>();
     private final Set<Integer> indexUses = new HashSet<>();
     private final Set<Integer> compared = new HashSet<>();
+    private final Set<Integer> anyDeref = new HashSet<>();
+    private final Set<Integer> nullCompared = new HashSet<>();
     private final Map<String, Set<String>> fieldCalls = new HashMap<>();
     private final Map<String, String> fieldInits = new HashMap<>();
     // locks
@@ -670,6 +672,12 @@ public final class BytecodeScanner implements Opcodes {
       derefParams.forEach(p -> derefShifted.add(paramIndex(p)));
       Set<Integer> closedShifted = new HashSet<>();
       closedParams.forEach(p -> closedShifted.add(paramIndex(p)));
+      Set<Integer> maybeShifted = new HashSet<>();
+      for (int p : anyDeref) {
+        if (refParams.contains(p) && !nullCompared.contains(p) && !reassigned.contains(p)) {
+          maybeShifted.add(paramIndex(p));
+        }
+      }
       Set<Integer> indexShifted = new HashSet<>();
       for (int p : indexUses) {
         if (p >= firstParam && p < paramEnd && !compared.contains(p) && !reassigned.contains(p)) {
@@ -684,7 +692,7 @@ public final class BytecodeScanner implements Opcodes {
       UseFacts uses = new UseFacts(Map.copyOf(callSites), Map.copyOf(checks), Map.copyOf(valueSites), Map.copyOf(ignored),
         Set.copyOf(derefShifted), Set.copyOf(closedShifted), callsSuper, Map.copyOf(staticWrites), Set.copyOf(fieldWrites),
         Set.copyOf(fieldEscapes), Map.copyOf(fieldCalls), Map.copyOf(fieldInits), Set.copyOf(enumLoads), Map.copyOf(switchMapLoads),
-        Set.copyOf(indexShifted));
+        Set.copyOf(indexShifted), Set.copyOf(maybeShifted));
       LockFacts lockFacts = new LockFacts(List.copyOf(accesses), List.copyOf(edges), List.copyOf(lockedCalls), Map.copyOf(acquired),
         Set.copyOf(heldAtReturn), Map.copyOf(reacquired));
       calls.addAll(lambdaRefs);
@@ -945,8 +953,18 @@ public final class BytecodeScanner implements Opcodes {
       // null tests feeding call-site statistics
       if (op == IFNULL || op == IFNONNULL) {
         recordNullCheck(top, i);
+        nullCompared.add(top.local());
       } else if (op == IF_ACMPEQ || op == IF_ACMPNE) {
         recordNullCheck(top.isNullConstant() ? second : second.isNullConstant() ? top : null, i);
+        nullCompared.add(top.local());
+        nullCompared.add(second.local());
+      } else if (op == INSTANCEOF) {
+        nullCompared.add(top.local());
+      } else if (insn instanceof MethodInsnNode nt && NULL_TESTS.contains(nt.owner + "#" + nt.name) && !"requireNonNull".equals(nt.name)) {
+        int argc = Type.getArgumentTypes(nt.desc).length;
+        for (int a = 0; a < argc; a++) {
+          nullCompared.add(f.getStack(sp - 1 - a).local());
+        }
       }
 
       // dereferences of parameters, field use, locks
@@ -1074,6 +1092,7 @@ public final class BytecodeScanner implements Opcodes {
           }
         }
       }
+      anyDeref.addAll(derefs);
       Set<String> remaining = new HashSet<>(f.getLocal(notDeref).calls());
       if (derefs.stream().anyMatch(d -> remaining.remove(String.valueOf(d)))) {
         out.setLocal(notDeref, V.names(remaining));
