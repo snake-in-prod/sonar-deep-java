@@ -41,13 +41,25 @@ public class SwappedArgumentsCheck extends DeepCheck {
         String ai = args.get(i);
         String aj = args.get(j);
         if (ai != null && aj != null && !ai.equals(aj) && ai.equals(params.get(j)) && aj.equals(params.get(i))
-          && !params.get(i).matches("arg\\d+")) {
+          && !params.get(i).matches("arg\\d+") && !bothOrders(mit, ai, aj)) {
           reportIssue(mit.arguments().get(i), "\"" + ai + "\" and \"" + aj + "\" are passed to the parameters named \"" + params.get(i)
             + "\" and \"" + params.get(j) + "\": are they swapped?");
           return;
         }
       }
     }
+  }
+
+  /** {@code f(b, c) || f(c, b)}: both orders in one statement are deliberate symmetry. */
+  private static boolean bothOrders(MethodInvocationTree mit, String ai, String aj) {
+    Tree method = mit;
+    while (method != null && !(method instanceof org.sonar.plugins.java.api.tree.StatementTree)) {
+      method = method.parent();
+    }
+    return method != null && Trees.any(method, MethodInvocationTree.class, m -> m != mit && Trees.name(m).equals(Trees.name(mit))
+      && m.arguments().size() == mit.arguments().size() && m.arguments().stream().anyMatch(a -> a instanceof IdentifierTree id && id.name().equals(aj))
+      && m.arguments().indexOf(m.arguments().stream().filter(a -> a instanceof IdentifierTree id && id.name().equals(aj)).findFirst().get())
+        < m.arguments().indexOf(m.arguments().stream().filter(a -> a instanceof IdentifierTree id && id.name().equals(ai)).findFirst().orElse(m.arguments().get(0))));
   }
 
   private List<String> paramNames(MethodInvocationTree mit) {

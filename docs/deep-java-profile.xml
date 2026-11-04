@@ -377,6 +377,7 @@
     <rule><repositoryKey>findbugs</repositoryKey><key>EC_UNRELATED_INTERFACES</key></rule>
     <rule><repositoryKey>findbugs</repositoryKey><key>EC_UNRELATED_TYPES</key></rule>
     <rule><repositoryKey>findbugs</repositoryKey><key>EC_UNRELATED_TYPES_USING_POINTER_EQUALITY</key></rule>
+    <rule><repositoryKey>findbugs</repositoryKey><key>GC_UNRELATED_TYPES</key></rule>
     <rule><repositoryKey>findbugs</repositoryKey><key>IS2_INCONSISTENT_SYNC</key></rule>
     <rule><repositoryKey>findbugs</repositoryKey><key>NP_ALWAYS_NULL</key></rule>
     <rule><repositoryKey>findbugs</repositoryKey><key>NP_ALWAYS_NULL_EXCEPTION</key></rule>
@@ -593,6 +594,7 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>CopyPasteIdentifier</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>DeadEnumCase</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>DereferenceBeforeNullCheck</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>DivisionByPossibleZero</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>EmptyMapLookup</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>GuardedByViolation</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>InconsistentLocking</key></rule>
@@ -604,6 +606,8 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>NarrowingCastOverflow</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>NegativeIndexFromSearch</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>NonReentrantLockReacquired</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>NullAssignedThenDereferenced</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>NullCheckedAtMostCallSites</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>NullPassedToDereferencedParameter</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>NullReturnDereference</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>OffByOneLoopBound</key></rule>
@@ -614,6 +618,7 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>SecretLeak</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>SetupAfterLastAssertion</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>StaticFieldInstanceLock</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>SwappedArguments</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedCommand</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedExpression</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedFormatString</key></rule>
@@ -628,6 +633,7 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedUrl</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedXPath</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TernaryPrecedence</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>TimingUnsafeSecretComparison</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>UnboundedAuthRetry</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>UnreachableCatch</key></rule>
   </rules>

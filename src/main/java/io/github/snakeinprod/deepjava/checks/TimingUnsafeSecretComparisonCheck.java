@@ -41,6 +41,11 @@ public class TimingUnsafeSecretComparisonCheck extends DeepCheck {
     } else {
       return;
     }
+    Tree method = Trees.enclosingMethod(mit);
+    if (method instanceof org.sonar.plugins.java.api.tree.MethodTree mt && mt.simpleName().name().matches("equals|hashCode|compareTo")) {
+      // value equality of a data class, not an authentication check
+      return;
+    }
     if (isLiteral(a) || isLiteral(b) || !(isSecret(a) || isSecret(b))) {
       return;
     }

@@ -17,6 +17,12 @@ class Iter {
     }
   }
 
+  void replaceValues(java.util.Map<String, String> m) {
+    for (java.util.Map.Entry<String, String> e : m.entrySet()) {
+      m.put(e.getKey(), e.getValue().trim());
+    }
+  }
+
   void viaLambda(List<String> names) {
     names.forEach(n -> names.remove(n)); // Noncompliant
   }

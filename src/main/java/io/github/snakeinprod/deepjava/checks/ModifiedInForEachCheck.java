@@ -52,11 +52,26 @@ public class ModifiedInForEachCheck extends DeepCheck {
     for (MethodInvocationTree m : Trees.collect(loop.statement(), MethodInvocationTree.class)) {
       String n = Trees.name(m);
       boolean mutates = mapView ? Set.of("remove", "clear", "put", "putAll").contains(n) : MUTATORS.contains(n);
-      if (mutates && Trees.receiver(m) != null && Trees.same(Trees.receiver(m), iterated) && !leavesLoop(m)) {
+      if (mutates && Trees.receiver(m) != null && Trees.same(Trees.receiver(m), iterated) && !leavesLoop(m)
+        && !(mapView && "put".equals(n) && putsSameKey(m, loop))) {
         reportIssue(m, "\"" + n + "()\" changes the collection that this loop iterates: the next iteration throws "
           + "ConcurrentModificationException. Use an Iterator or removeIf().");
       }
     }
+  }
+
+  /** {@code map.put(key, ...)} for the key being visited only replaces a value: not a structural change. */
+  private static boolean putsSameKey(MethodInvocationTree put, ForEachStatement loop) {
+    if (put.arguments().isEmpty()) {
+      return false;
+    }
+    ExpressionTree key = Trees.skip(put.arguments().get(0));
+    org.sonar.plugins.java.api.semantic.Symbol var = loop.variable().symbol();
+    if (var.equals(Trees.symbol(key))) {
+      return true;
+    }
+    return key instanceof MethodInvocationTree get && "getKey".equals(Trees.name(get)) && Trees.receiver(get) != null
+      && var.equals(Trees.symbol(Trees.receiver(get)));
   }
 
   /** {@code c.forEach(x -> c.remove(x))}: the same exception from inside the iteration. */

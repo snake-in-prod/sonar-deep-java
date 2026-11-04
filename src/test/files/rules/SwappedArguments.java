@@ -9,4 +9,12 @@ class Mover {
     move(to, from); // Noncompliant
     move(from, to);
   }
+
+  boolean between(int b, int c) {
+    return ordered(b, c) || ordered(c, b);
+  }
+
+  boolean ordered(int b, int c) {
+    return b < c;
+  }
 }

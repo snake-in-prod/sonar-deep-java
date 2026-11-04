@@ -11,7 +11,8 @@ See [docs/SPEC.md](docs/SPEC.md) for the specification this plugin implements.
 
 ## Rules
 
-50 rules. Rules marked * are not in the default profile (see the benchmark).
+55 rules. Rules marked * are available but not in the default profile (on real projects most of their issues were
+intended code; see the benchmark).
 
 | Rule | What it finds | CWE |
 |---|---|---|
@@ -19,6 +20,8 @@ See [docs/SPEC.md](docs/SPEC.md) for the specification this plugin implements.
 | `NullReturnDereference` | Values that can be null should not be dereferenced across methods | 476, 690 |
 | `NullPassedToDereferencedParameter` | Null should not be passed to a parameter that is always dereferenced | 476 |
 | `DereferenceBeforeNullCheck` | Values should not be compared to null after they were dereferenced | 476 |
+| `NullCheckedAtMostCallSites` | Results null-checked at most call sites should be checked here | 476, 252 |
+| `NullAssignedThenDereferenced` | Variables set to null on one path should not be dereferenced after the paths join | 476 |
 | **2. resources** | | |
 | `ResourceFromHelperNotClosed` | Resources returned by helper methods should be closed | 404, 772 |
 | `ResourceClosedTwice` | Resources should not be closed twice | 675 |
@@ -44,9 +47,10 @@ See [docs/SPEC.md](docs/SPEC.md) for the specification this plugin implements.
 | `LoopCounterOverflow` | Loop counters should be able to reach the loop bound | 190, 835 |
 | `IndexCheckedAfterUse` | Indexes should be checked before they are used | 129 |
 | `NarrowingCastOverflow` | Time stamps and file sizes should not be narrowed to int | 197, 681 |
+| `DivisionByPossibleZero` | Divisors that can be zero should be checked | 369 |
 | **5. statistics** | | |
-| `IgnoredResultStatistical` | Return values checked at most call sites should be checked here | 252 |
-| `MissingSuperCall` | Overrides should call super when most overrides do |  |
+| `IgnoredResultStatistical`* | Return values checked at most call sites should be checked here | 252 |
+| `MissingSuperCall`* | Overrides should call super when most overrides do |  |
 | `InconsistentLocking` | Fields accessed under a lock at most places should always be | 362, 366 |
 | **6. concurrency** | | |
 | `GuardedByViolation` | Fields annotated @GuardedBy should only be accessed with the lock | 362 |
@@ -57,7 +61,7 @@ See [docs/SPEC.md](docs/SPEC.md) for the specification this plugin implements.
 | `StaticFieldInstanceLock` | Static fields should not be guarded by an instance lock | 667 |
 | `LockOrderCycle` | Locks should be acquired in a consistent order | 833 |
 | **7. exceptions** | | |
-| `UncheckedExceptionInEntryPoint` | Unchecked exceptions should not escape thread and task entry points | 248 |
+| `UncheckedExceptionInEntryPoint`* | Unchecked exceptions should not escape thread and task entry points | 248 |
 | `UnreachableCatch` | Catch blocks should be reachable | 561 |
 | `CodeAfterAlwaysThrows` | Code should not follow a call that always throws | 561 |
 | **8. dead code** | | |
@@ -73,10 +77,9 @@ See [docs/SPEC.md](docs/SPEC.md) for the specification this plugin implements.
 | `ConflictingJUnitAnnotations` | JUnit annotations should not conflict |  |
 | `SecretLeak` | Secrets should not be written to logs, exception messages or standard output | 532 |
 | `UnboundedAuthRetry` | Authentication should not be retried without a limit | 307 |
+| `SwappedArguments` | Arguments should not be passed in swapped order | 683 |
+| `TimingUnsafeSecretComparison` | Secrets should be compared in constant time | 208 |
 | `CopyPasteIdentifier` | Expressions copied from a neighbour should rename every identifier |  |
-
-\* `IgnoredResultStatistical`, `MissingSuperCall` and `UncheckedExceptionInEntryPoint` are available but not
-activated by default.
 
 All rules except those marked * are added to the built-in "Sonar way" Java profile.
 
@@ -112,6 +115,10 @@ Full procedure with verification and rollback, written to be followed by a perso
 | `sonar.deepjava.maxVirtualTargets` | `8` | Virtual calls with more implementations are ignored |
 | `sonar.deepjava.statistics.minCallSites` | `5` | Statistical rules need at least this many sites... |
 | `sonar.deepjava.statistics.minRatio` | `0.8` | ...and this share of them agreeing |
+| `sonar.deepjava.nullableAnnotations` | `Nullable,CheckForNull,NullableDecl` | Annotations that mark a nullable method or field (Lombok getters of such fields included); a simple name matches any package |
+| `sonar.deepjava.nullableAnnotations.ignored` | none | Qualified names to ignore, e.g. `org.apache.avro.reflect.Nullable` |
+| `sonar.deepjava.taint.dataSources` | `true` | Integers read from buffers, streams, readers and parsers count as untrusted sizes, indexes and loop bounds |
+| `sonar.deepjava.taint.logParametersSafe` | `true` | `log.info("x {}", value)` is not log injection (the layout encodes CR/LF); only concatenation into the message is reported |
 
 ### Library models
 
@@ -133,8 +140,10 @@ sinks, propagators, sanitizers). Files given in `sonar.deepjava.models` use the 
 ```
 
 Methods are `owner#name` (all overloads) or `owner#name(descriptor)`, in JVM internal form; `*` matches any part.
-Sink argument indexes exclude the receiver, which is `-1`. Taint source kinds: `USER`, `COOKIE`, `JWT`, `NET`,
-`MSG`, `CMDLINE`, `ENV`, `FILE`, `DESER`, `SECRET`; sink kinds: `SQL`, `COMMAND`, `PATH`, `SSRF`, `LDAP`, `XPATH`,
+Sink argument indexes exclude the receiver, which is `-1`; `parameterArgs` are template parameters (log calls).
+Fields annotated with a `fieldSourceAnnotations` entry (Spring `@Value` by default) are sources. Taint source kinds:
+`USER`, `COOKIE`, `JWT`, `NET`, `MSG`, `CMDLINE`, `ENV`, `FILE`, `DESER`, `SECRET`, `DATA` (binary or text input, sizes only),
+`CONFIG` (configuration, commands only); sink kinds: `SQL`, `COMMAND`, `PATH`, `SSRF`, `LDAP`, `XPATH`,
 `LOG`, `HEADER`, `REDIRECT`, `EXPRESSION`, `FORMAT`, `SIZE`, `DECISION`, `STDOUT`.
 
 ## How it works
@@ -236,7 +245,9 @@ Before the precision work described above, the same run reported 840 issues.
 - Lock identity is by class (`this` of a class, a field, or the declared type of a local), so two instances of one
   class are not told apart.
 - Recursive call cycles are cut; their summaries may be incomplete.
-- Methods annotated `@Nullable`/`@CheckForNull` are left to sonar-java's `S2259`.
+- Calls the syntax tree cannot resolve (Lombok accessors) are matched by receiver type, name and argument count;
+  overloads with the same argument count are skipped.
+- Members marked `@Generated` (Lombok, annotation processors) or `@AvroGenerated` are not reported.
 
 ## Build
 
