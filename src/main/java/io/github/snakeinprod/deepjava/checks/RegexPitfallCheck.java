@@ -57,7 +57,7 @@ public class RegexPitfallCheck extends DeepCheck {
     } else if (alternatives.find()) {
       reportIssue(arg, "\"" + alternatives.group() + "\" lists single characters as alternatives; use a character class "
         + "(or an anchor with a class, such as \"(?:^|[-])\").");
-    } else if (onString && !"matches".equals(name) && literalWithDot(regex)) {
+    } else if (onString && !"matches".equals(name) && (literalWithDot(regex) || ".".equals(regex) && summaries.get().options().referenceParity())) {
       reportIssue(arg, "\".\" in the regex of \"" + name + "()\" matches any character; escape it (\"\\\\.\") or use replace().");
     }
   }

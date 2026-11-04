@@ -64,3 +64,27 @@ class Journal {
     ledger.close(); // Noncompliant
   }
 }
+
+class Hub {
+  private final java.util.Map<String, Node> nodes = new java.util.HashMap<>();
+
+  synchronized void tick() {
+    nodes.get("a").touch(); // Noncompliant
+  }
+
+  synchronized void ping() {
+    System.out.println("ping");
+  }
+}
+
+class Node {
+  private Hub hub;
+
+  synchronized void touch() {
+    System.out.println("touch");
+  }
+
+  synchronized void report() {
+    hub.ping();
+  }
+}

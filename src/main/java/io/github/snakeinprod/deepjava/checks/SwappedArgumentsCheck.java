@@ -29,16 +29,21 @@ public class SwappedArgumentsCheck extends DeepCheck {
   public void visitNode(Tree tree) {
     if (tree instanceof org.sonar.plugins.java.api.tree.NewClassTree nc) {
       // new Relation(target, source) for Relation(source, target)
-      check(nc.arguments(), constructorParams(nc.methodSymbol()), null);
+      check(nc.arguments(), constructorParams(nc), null);
       return;
     }
     MethodInvocationTree mit = (MethodInvocationTree) tree;
     check(mit.arguments(), paramNames(mit), mit);
   }
 
-  private List<String> constructorParams(Symbol.MethodSymbol sym) {
+  private List<String> constructorParams(org.sonar.plugins.java.api.tree.NewClassTree nc) {
+    Symbol.MethodSymbol sym = nc.methodSymbol();
     if (sym.isUnknown()) {
-      return List.of();
+      // a Lombok constructor (@AllArgsConstructor, @Data): only in the bytecode, its parameters named after the fields
+      org.sonar.plugins.java.api.semantic.Type t = nc.symbolType();
+      String key = t.isUnknown() ? null : summaries.get().findMethod(t.erasure().fullyQualifiedName().replace('.', '/'), "<init>", nc.arguments().size());
+      List<Summaries.Method> targets = key == null ? List.of() : summaries.get().targets(key.replaceFirst("^!?", "!"));
+      return targets.isEmpty() ? List.of() : targets.get(0).facts().info().paramNames();
     }
     if (sym.declaration() != null) {
       List<String> names = new ArrayList<>();

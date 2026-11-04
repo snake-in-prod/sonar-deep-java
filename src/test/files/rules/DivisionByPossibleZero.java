@@ -61,3 +61,17 @@ class Pager {
     return total / seven();
   }
 }
+
+class Pages {
+  static int total(int count, int size) {
+    return count / size;
+  }
+
+  int pages(PageRequest request, int count) {
+    return total(count, request.getPageSize()); // Noncompliant
+  }
+
+  int fixed(int count) {
+    return total(count, 10);
+  }
+}

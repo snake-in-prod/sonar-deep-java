@@ -68,4 +68,11 @@ class Streams {
       throw e;
     }
   }
+
+  int library(java.nio.file.Path p) throws IOException {
+    InputStream in = java.nio.file.Files.newInputStream(p); // Noncompliant
+    int b = in.read();
+    in.close();
+    return b;
+  }
 }

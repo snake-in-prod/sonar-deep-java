@@ -40,6 +40,26 @@ class ParityTest {
     verify("src/test/files/parity/CookieNumbers.java", s -> (JavaFileScanner) TaintChecks.create("TaintedHeader", () -> s));
   }
 
+  @Test
+  void copy_paste_in_branches() throws Exception {
+    verify("src/test/files/parity/Branches.java", s -> new CopyPasteCheck(() -> s));
+  }
+
+  @Test
+  void generic_dao_key() throws Exception {
+    verify("src/test/files/parity/GenericKeys.java", s -> new UnrelatedKeyTypeCheck(() -> s));
+  }
+
+  @Test
+  void same_key_put_while_iterating() throws Exception {
+    verify("src/test/files/parity/SameKeyPut.java", s -> new ModifiedInForEachCheck(() -> s));
+  }
+
+  @Test
+  void single_dot_regex() throws Exception {
+    verify("src/test/files/parity/DotRegex.java", s -> new RegexPitfallCheck(() -> s));
+  }
+
   private void verify(String file, java.util.function.Function<Summaries, JavaFileScanner> check) throws Exception {
     Summaries summaries = TestSummaries.compile(Summaries.Thresholds.DEFAULT, TestSummaries.optionsFor(file), classes, file);
     CheckVerifier.newVerifier()

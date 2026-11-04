@@ -48,4 +48,12 @@ class Search {
   int take(int[] slots) {
     return slots[firstFree(slots)]; // Noncompliant
   }
+
+  void mark(int[] slots, int i) {
+    slots[i] = 1;
+  }
+
+  void markFree(int[] slots) {
+    mark(slots, firstFree(slots)); // Noncompliant
+  }
 }

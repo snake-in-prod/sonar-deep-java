@@ -513,6 +513,7 @@ public final class BytecodeScanner implements Opcodes {
     private final Map<Integer, String> keyUses = new HashMap<>();
     private final Map<Integer, String> nonNullChecks = new HashMap<>();
     private final Map<Integer, Set<String>> forwards = new HashMap<>();
+    private final Set<Integer> divisors = new HashSet<>();
     private final Map<String, Set<String>> fieldCalls = new HashMap<>();
     private final Map<String, String> fieldInits = new HashMap<>();
     // locks
@@ -715,6 +716,12 @@ public final class BytecodeScanner implements Opcodes {
           forwardShifted.put(paramIndex(p), Set.copyOf(targets));
         }
       });
+      Set<Integer> divisorShifted = new HashSet<>();
+      for (int p : divisors) {
+        if (p >= firstParam && p < paramEnd && !compared.contains(p) && !reassigned.contains(p)) {
+          divisorShifted.add(paramIndex(p));
+        }
+      }
       Map<Integer, String> keyShifted = new HashMap<>();
       keyUses.forEach((p, field) -> {
         if (p >= firstParam && p < paramEnd && !reassigned.contains(p)) {
@@ -736,7 +743,7 @@ public final class BytecodeScanner implements Opcodes {
         Set.copyOf(derefShifted), Set.copyOf(closedShifted), callsSuper, Map.copyOf(staticWrites), Set.copyOf(fieldWrites),
         Set.copyOf(fieldEscapes), Map.copyOf(fieldCalls), Map.copyOf(fieldInits), Set.copyOf(enumLoads), Map.copyOf(switchMapLoads),
         Set.copyOf(indexShifted), Set.copyOf(maybeShifted), Map.copyOf(keyShifted), Map.copyOf(nonNullChecks),
-        Map.copyOf(forwardShifted));
+        Map.copyOf(forwardShifted), Set.copyOf(divisorShifted));
       LockFacts lockFacts = new LockFacts(List.copyOf(accesses), List.copyOf(edges), List.copyOf(lockedCalls), Map.copyOf(acquired),
         Set.copyOf(heldAtReturn), Map.copyOf(reacquired));
       calls.addAll(lambdaRefs);
@@ -1067,6 +1074,10 @@ public final class BytecodeScanner implements Opcodes {
       // int parameters used as an index, and int values compared
       if (op >= IALOAD && op <= SALOAD) {
         indexUses.add(top.local());
+      } else if (op >= IASTORE && op <= SASTORE) {
+        indexUses.add(f.getStack(sp - 2).local());
+      } else if (op == IDIV || op == IREM || op == LDIV || op == LREM) {
+        divisors.add(top.local());
       } else if (op >= IFEQ && op <= IFLE) {
         compared.add(top.local());
       } else if (op >= IF_ICMPEQ && op <= IF_ICMPLE) {

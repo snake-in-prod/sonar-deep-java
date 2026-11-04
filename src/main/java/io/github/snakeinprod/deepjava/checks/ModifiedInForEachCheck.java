@@ -51,7 +51,7 @@ public class ModifiedInForEachCheck extends DeepCheck {
       String n = Trees.name(m);
       boolean mutates = mapView ? MAP_MUTATORS.contains(n) : MUTATORS.contains(n);
       if (mutates && Trees.receiver(m) != null && Trees.same(Trees.receiver(m), iterated) && !leavesLoop(m)
-        && !(mapView && "put".equals(n) && putsSameKey(m, loop))) {
+        && !(mapView && "put".equals(n) && putsSameKey(m, loop) && !summaries.get().options().referenceParity())) {
         reportIssue(m, "\"" + n + "()\" changes the collection that this loop iterates: the next iteration throws "
           + "ConcurrentModificationException. Use an Iterator or removeIf().");
       } else if (mapView && Trees.receiver(m) == null && !leavesLoop(m)) {

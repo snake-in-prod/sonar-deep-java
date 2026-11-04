@@ -34,3 +34,15 @@ class Graph {
     return new Relation(source, target);
   }
 }
+
+@lombok.AllArgsConstructor
+class Range {
+  private int low;
+  private int high;
+}
+
+class Ranges {
+  Range of(int low, int high) {
+    return new Range(high, low); // Noncompliant
+  }
+}

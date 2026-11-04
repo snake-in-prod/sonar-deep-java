@@ -27,11 +27,35 @@ public class DivisionByPossibleZeroCheck extends DeepCheck {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.DIVIDE, Tree.Kind.REMAINDER);
+    return List.of(Tree.Kind.DIVIDE, Tree.Kind.REMAINDER, Tree.Kind.METHOD_INVOCATION);
+  }
+
+  /** {@code Pages.total(count, page.getSize())} where {@code total} divides by its parameter without a check. */
+  private void divisorArgument(MethodInvocationTree call) {
+    String key = Trees.resolveCallKey(call, summaries.get());
+    List<Summaries.Method> targets = key == null ? List.of() : summaries.get().targets(key);
+    for (int i = 0; i < call.arguments().size() && !targets.isEmpty(); i++) {
+      int index = i;
+      if (!targets.stream().allMatch(t -> t.facts().uses().divisorParams().contains(index))) {
+        continue;
+      }
+      ExpressionTree arg = Trees.skip(call.arguments().get(i));
+      ExpressionTree count = countOf(arg);
+      String why = count == null ? null : why(count);
+      Tree method = Trees.enclosingMethod(call);
+      if (why != null && method != null && !isChecked(method, arg, count, call)) {
+        reportIssue(call.arguments().get(i), "\"" + targets.get(0).display() + "\" divides by this argument, which can be 0 (" + why
+          + "); check it first.");
+      }
+    }
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if (tree instanceof MethodInvocationTree call) {
+      divisorArgument(call);
+      return;
+    }
     BinaryExpressionTree b = (BinaryExpressionTree) tree;
     if (!b.symbolType().isPrimitive() || b.symbolType().is("double") || b.symbolType().is("float")) {
       return;
@@ -61,6 +85,10 @@ public class DivisionByPossibleZeroCheck extends DeepCheck {
     ExpressionTree r = Trees.receiver(m);
     if (m.arguments().isEmpty() && Trees.name(m).matches("get[A-Z].*") && r != null && r.symbolType().name().matches(REQUEST_TYPE)) {
       return "\"" + Trees.name(m) + "()\" of a request object is whatever the client sent";
+    }
+    if (m.arguments().isEmpty() && Trees.name(m).matches("get[A-Z].*") && r != null
+      && (r.symbolType().isSubtypeOf("com.google.protobuf.MessageOrBuilder") || r.symbolType().name().endsWith("Builder"))) {
+      return "\"" + Trees.name(m) + "()\" of a protobuf message or builder is 0 when the field is unset";
     }
     String key = Trees.resolveCallKey(m, summaries.get());
     List<Summaries.Method> targets = key == null || !key.endsWith(")I") && !key.endsWith(")J") ? List.of() : summaries.get().targets(key);

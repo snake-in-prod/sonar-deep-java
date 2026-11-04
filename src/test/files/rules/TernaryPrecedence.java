@@ -24,4 +24,8 @@ class Ternary {
   int plain(int i, int n, int a, int b) {
     return i + 1 < n ? a : b;
   }
+
+  int sized(int a, int b, java.util.List<String> c, int x, int y) {
+    return a + b - 1 < c.size() - 1 ? x : y; // Noncompliant
+  }
 }

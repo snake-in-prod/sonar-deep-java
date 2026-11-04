@@ -48,6 +48,14 @@ public class ResourceFromHelperCheck extends DeepCheck {
     String key = Trees.callKey(sym);
     Summaries s = summaries.get();
     List<Summaries.Method> targets = key == null ? List.of() : s.targets(key);
+    if (targets.isEmpty() && key != null && mit.parent() instanceof VariableTree lib && Trees.isLocal(lib.symbol()) && !lib.parent().is(Tree.Kind.LIST)) {
+      // a library factory (Files.newInputStream): "never closed" is Sonar's own rule; the exception edge is not
+      Summaries.Call c = Summaries.parse(key);
+      if (s.models().isResourceFactory(c.owner(), c.name(), s.hierarchy())) {
+        lostOnException(lib, "\"" + Summaries.display(c.owner(), c.name()) + "\" opens a \"" + sym.returnType().type().name() + "\"");
+      }
+      return;
+    }
     if (targets.isEmpty() || !targets.stream().allMatch(t -> fresh(s, t, 0))) {
       return;
     }

@@ -30,7 +30,68 @@ public class CopyPasteCheck extends DeepCheck {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.BLOCK, Tree.Kind.METHOD_INVOCATION);
+    return List.of(Tree.Kind.BLOCK, Tree.Kind.METHOD_INVOCATION, Tree.Kind.IF_STATEMENT);
+  }
+
+  /**
+   * Parity mode: {@code if (a.getX() != null) a.setX(b.getX())} tests the target instead of the source; and
+   * {@code if/else} branches that are the same code except one small expression.
+   */
+  private void branches(org.sonar.plugins.java.api.tree.IfStatementTree ifs) {
+    for (MethodInvocationTree g : Trees.collect(ifs.condition(), MethodInvocationTree.class)) {
+      ExpressionTree r = Trees.receiver(g);
+      Symbol tested = r == null ? null : Trees.symbol(r);
+      if (tested == null || !g.arguments().isEmpty() || !Trees.name(g).matches("(get|is)[A-Z].*")) {
+        continue;
+      }
+      String prop = decap(Trees.name(g).replaceFirst("^(get|is)", ""));
+      for (MethodInvocationTree m : Trees.collect(ifs.thenStatement(), MethodInvocationTree.class)) {
+        Copy c = copy(m);
+        if (c != null && tested.equals(c.target()) && c.prop().equals(prop) && c.srcProp().equals(prop) && !c.source().equals(tested)) {
+          reportIssue(g, "The condition tests \"" + tested.name() + "." + Trees.name(g) + "()\" but the branch copies \"" + c.source().name()
+            + "." + Trees.name(g) + "()\": should the condition test \"" + c.source().name() + "\"?");
+          return;
+        }
+      }
+    }
+    if (ifs.elseStatement() == null || ifs.elseStatement().is(Tree.Kind.IF_STATEMENT)) {
+      return;
+    }
+    String a = text(ifs.thenStatement());
+    String b = text(ifs.elseStatement());
+    if (a == null || b == null || a.equals(b) || a.length() < 20) {
+      return;
+    }
+    int pre = 0;
+    while (pre < a.length() && pre < b.length() && a.charAt(pre) == b.charAt(pre)) {
+      pre++;
+    }
+    int suf = 0;
+    while (suf < a.length() - pre && suf < b.length() - pre && a.charAt(a.length() - 1 - suf) == b.charAt(b.length() - 1 - suf)) {
+      suf++;
+    }
+    String da = a.substring(pre, a.length() - suf).trim();
+    String db = b.substring(pre, b.length() - suf).trim();
+    if (da.length() <= 40 && db.length() <= 40 && (pre + suf) * 2 > Math.max(a.length(), b.length())) {
+      reportIssue(ifs.elseKeyword(), "The two branches are the same code except \"" + da + "\" and \"" + db + "\": is one of them a copy "
+        + "that was not fully edited?");
+    }
+  }
+
+  /** Source text of a tree, whitespace collapsed. */
+  private String text(Tree t) {
+    var start = t.firstToken().range().start();
+    var end = t.lastToken().range().end();
+    List<String> lines = context.getFileLines();
+    StringBuilder sb = new StringBuilder();
+    for (int l = start.line(); l <= end.line(); l++) {
+      String line = lines.get(l - 1);
+      int from = l == start.line() ? start.columnOffset() : 0;
+      int to = l == end.line() ? Math.min(end.columnOffset(), line.length()) : line.length();
+      // comments are not code
+      sb.append(line.substring(Math.min(from, to), to).replaceAll("(^|\\s)//.*$", "")).append(' ');
+    }
+    return sb.toString().replaceAll("\\s+", " ").replaceAll("^\\{|\\}\\s*$", "").trim();
   }
 
   /** {@code left.lp OP right.rp}. */
@@ -47,6 +108,12 @@ public class CopyPasteCheck extends DeepCheck {
 
   @Override
   public void visitNode(Tree tree) {
+    if (tree instanceof org.sonar.plugins.java.api.tree.IfStatementTree ifs) {
+      if (summaries.get().options().referenceParity()) {
+        branches(ifs);
+      }
+      return;
+    }
     List<Copy> copies = new ArrayList<>();
     if (tree instanceof BlockTree block) {
       for (StatementTree st : block.body()) {

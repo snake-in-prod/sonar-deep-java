@@ -72,6 +72,13 @@ public class UnrelatedKeyTypeCheck extends DeepCheck {
 
   private void check(ExpressionTree arg, Type keyType, String where) {
     Type a = arg.symbolType();
+    if (keyType != null && keyType.isTypeVar() && summaries.get().options().referenceParity() && !a.isUnknown() && !a.isTypeVar()
+      && !a.is("java.lang.Object") && !arg.is(Tree.Kind.NULL_LITERAL)) {
+      // parity: a generic DAO looking up a String in its Map<K, V>, which only matches when K is String
+      reportIssue(arg, "A \"" + a.name() + "\" is looked up in a " + where + " keyed by the type variable \"" + keyType.name()
+        + "\": it only matches when \"" + keyType.name() + "\" is \"" + a.name() + "\".");
+      return;
+    }
     if (keyType == null || keyType.isUnknown() || a.isUnknown() || a.is("java.lang.Object") || keyType.is("java.lang.Object")
       || arg.is(Tree.Kind.NULL_LITERAL) || keyType.name().isEmpty() || keyType.name().startsWith("?") || keyType.isTypeVar() || a.isTypeVar() || a.isNullType() || keyType.isIntersectionType()) {
       return;
