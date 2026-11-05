@@ -20,8 +20,8 @@ public class NullCheckedAtMostCallSitesCheck extends DeepCheck {
 
   /** Plain getters are checked out of habit more often: they need a stronger majority. */
   private static final double GETTER_RATIO = 0.9;
-  private static final double PARITY_RATIO = 0.5;
-  private static final int PARITY_MIN_SITES = 3;
+  /** Parity default when sonar.deepjava.statistics.minRatio is left at its default; call sites keep the default 5. */
+  private static final double PARITY_RATIO = 0.6;
 
   public NullCheckedAtMostCallSitesCheck(Supplier<Summaries> summaries) {
     super(summaries);
@@ -56,9 +56,12 @@ public class NullCheckedAtMostCallSitesCheck extends DeepCheck {
     if (site == null) {
       return;
     }
-    // parity: the reference analyzer reports at lower ratios; getters get no stricter cut-off
-    double ratio = parity ? PARITY_RATIO : isPlainGetter(s, key) ? Math.max(GETTER_RATIO, s.thresholds().minRatio()) : s.thresholds().minRatio();
-    int minSites = parity ? Math.min(PARITY_MIN_SITES, s.thresholds().minSites()) : s.thresholds().minSites();
+    // parity: the reference analyzer reports at lower ratios; getters get no stricter cut-off; a ratio set explicitly wins
+    // ponytail: "set" means "differs from the default 0.8", a Configuration cannot tell an explicit default apart
+    double configured = s.thresholds().minRatio();
+    double ratio = parity ? (configured == Summaries.Thresholds.DEFAULT.minRatio() ? PARITY_RATIO : configured)
+      : isPlainGetter(s, key) ? Math.max(GETTER_RATIO, configured) : configured;
+    int minSites = s.thresholds().minSites();
     // main code alone first (what the reference counts), then with the test callers parity mode adds, but only when
     // main code has enough call sites of its own: test-dominated statistics (assertNotNull) make most extra issues
     Summaries.CallStats main = s.callStats(key, false);
@@ -71,9 +74,8 @@ public class NullCheckedAtMostCallSitesCheck extends DeepCheck {
         return;
       }
     }
-    // NullReturnDereference already reports the calls whose null it can explain
-    // (an argument it does not report: that is NullPassedToDereferencedParameter's, a different reference class)
-    if (!argument && NullReturnDereferenceCheck.reportableReason(mit, s, key).isPresent() || NullReturnDereferenceCheck.isNullCheckedElsewhere(mit)) {
+    // NullReturnDereference already reports the calls whose null it can explain (parity: a class of its own, report both)
+    if (!parity && NullReturnDereferenceCheck.reportableReason(mit, s, key).isPresent() || NullReturnDereferenceCheck.isNullCheckedElsewhere(mit)) {
       return;
     }
     Summaries.Call c = Summaries.parse(key);

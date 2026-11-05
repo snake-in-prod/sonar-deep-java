@@ -1,15 +1,21 @@
 package nullness; // parity
 
-import java.util.Map;
 import java.util.Objects;
 
 class ParityRequireNonNull {
-  String direct(Map<String, String> m) {
-    return Objects.requireNonNull(m.get("k")); // Noncompliant
+  static String find(String k) {
+    if (k.isEmpty()) {
+      return null;
+    }
+    return k;
   }
 
-  void local(Map<String, String> m) {
-    String v = m.get("k");
+  String direct() {
+    return Objects.requireNonNull(find("k")); // Noncompliant
+  }
+
+  void local() {
+    String v = find("k");
     Objects.requireNonNull(v); // Noncompliant
   }
 }

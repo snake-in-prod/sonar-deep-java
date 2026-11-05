@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
+import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.BlockTree;
 import org.sonar.plugins.java.api.tree.CatchTree;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
@@ -38,7 +39,7 @@ public class UnreachableCodeCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.COMPILATION_UNIT, Tree.Kind.FOR_STATEMENT);
+    return List.of(Tree.Kind.COMPILATION_UNIT, Tree.Kind.FOR_STATEMENT, Tree.Kind.TRY_STATEMENT);
   }
 
   @Override
@@ -60,6 +61,10 @@ public class UnreachableCodeCheck extends IssuableSubscriptionVisitor {
           addIssue(f.line(), f.message());
         }
       }
+      return;
+    }
+    if (tree instanceof TryStatementTree t) {
+      catchNullChecks(t);
       return;
     }
     ForStatementTree loop = (ForStatementTree) tree;
@@ -103,6 +108,71 @@ public class UnreachableCodeCheck extends IssuableSubscriptionVisitor {
       }
     }
     return true;
+  }
+
+  /**
+   * {@code a = new FileOutputStream(p); b = new OutputStreamWriter(a);} in the try, {@code if (b != null)} in
+   * {@code catch (IOException e)}: b is assigned only after the last statement that can throw the caught exception,
+   * so it is still null there.
+   */
+  private void catchNullChecks(TryStatementTree t) {
+    List<StatementTree> body = t.block().body();
+    for (CatchTree c : t.catches()) {
+      Type caught = c.parameter().type().symbolType();
+      if (c.parameter().type().is(Tree.Kind.UNION_TYPE) || caught.isUnknown() || !caught.isSubtypeOf("java.lang.Exception")
+        || caught.is("java.lang.Exception") || caught.isSubtypeOf("java.lang.RuntimeException")) {
+        continue;
+      }
+      int lastThrow = -1;
+      for (int i = 0; i < body.size(); i++) {
+        if (mayThrow(body.get(i), caught)) {
+          lastThrow = i;
+        }
+      }
+      if (lastThrow < 0) {
+        continue;
+      }
+      for (IfStatementTree ifs : Trees.collect(c.block(), IfStatementTree.class)) {
+        if (Trees.skip(ifs.condition()) instanceof org.sonar.plugins.java.api.tree.BinaryExpressionTree b && b.is(Tree.Kind.NOT_EQUAL_TO)
+          && Trees.skip(b.rightOperand()).is(Tree.Kind.NULL_LITERAL) && Trees.skip(b.leftOperand()) instanceof IdentifierTree id
+          && stillNull(id.symbol(), body, lastThrow) && lines.add(Trees.line(ifs))) {
+          reportIssue(ifs.condition(), "\"" + id.name() + "\" is assigned only after the last call that can throw \"" + caught.name()
+            + "\", so it is still null here: this branch never runs.");
+        }
+      }
+    }
+  }
+
+  /** A local declared as null outside the try, assigned only by {@code v = ...;} statements of the try at or after {@code from}. */
+  private static boolean stillNull(Symbol v, List<StatementTree> body, int from) {
+    if (!Trees.isLocal(v) || !(v.declaration() instanceof VariableTree d) || d.initializer() == null
+      || !Trees.skip(d.initializer()).is(Tree.Kind.NULL_LITERAL)) {
+      return false;
+    }
+    boolean assigned = false;
+    for (IdentifierTree u : v.usages()) {
+      if (u.parent() instanceof org.sonar.plugins.java.api.tree.AssignmentExpressionTree a && a.variable() == u) {
+        int at = body.indexOf(a.parent());
+        if (at < from) {
+          return false;
+        }
+        assigned = true;
+      }
+    }
+    return assigned;
+  }
+
+  /** A call, constructor or throw in {@code st} that can throw {@code caught} (or a super- or subtype); unknown calls can. */
+  private static boolean mayThrow(Tree st, Type caught) {
+    return Trees.any(st, Tree.class, x -> {
+      Symbol.MethodSymbol m = x instanceof org.sonar.plugins.java.api.tree.MethodInvocationTree mi ? mi.methodSymbol()
+        : x instanceof org.sonar.plugins.java.api.tree.NewClassTree nc ? nc.methodSymbol() : null;
+      if (m != null) {
+        return m.isUnknown() || m.thrownTypes().stream().anyMatch(e -> e.isSubtypeOf(caught) || caught.isSubtypeOf(e));
+      }
+      return x instanceof org.sonar.plugins.java.api.tree.ThrowStatementTree th
+        && (th.expression().symbolType().isSubtypeOf(caught) || caught.isSubtypeOf(th.expression().symbolType()));
+    });
   }
 
   private static boolean isConstantField(org.sonar.plugins.java.api.tree.ExpressionTree e) {

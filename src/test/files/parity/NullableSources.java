@@ -37,6 +37,6 @@ class Handlers {
   }
 
   int checked(Reply r) {
-    return r.getContent() == null ? 0 : r.getContent().size();
+    return r.getContent() == null ? 0 : r.getContent().size(); // Noncompliant
   }
 }

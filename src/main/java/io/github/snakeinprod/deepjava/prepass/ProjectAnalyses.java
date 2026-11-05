@@ -124,6 +124,8 @@ final class ProjectAnalyses implements Opcodes {
   private static final java.util.regex.Pattern PURE_JDK =
     java.util.regex.Pattern.compile("java/lang/(Integer|Long|Short|Byte|Double|Float|Boolean|String)|java/math/Big\\w+|java/time/\\w+|java/util/UUID");
 
+  private static final double PARITY_IGNORED_RATIO = 0.95;
+
   private void ignoredResults() {
     Map<String, Integer> used = new HashMap<>();
     Map<String, List<Object[]>> ignored = new HashMap<>();
@@ -142,7 +144,8 @@ final class ProjectAnalyses implements Opcodes {
       }
       int u = used.getOrDefault(k, 0);
       int total = u + sites.size();
-      if (atLeast(u, total)) {
+      // parity: the reference reports ignored results only at a near-unanimous share (38 of 39)
+      if (atLeast(u, total) && (!s.options().referenceParity() || u >= PARITY_IGNORED_RATIO * total)) {
         for (Object[] site : sites) {
           add(IGNORED_RESULT, (ClassFacts) site[0], (Integer) site[1], "The result of \"" + Summaries.display(c.owner(), c.name())
             + "\" is used at " + u + " of " + total + " call sites; check it here too.");
@@ -542,7 +545,8 @@ final class ProjectAnalyses implements Opcodes {
 
   private void uncheckedInEntryPoints() {
     for (Method m : methods) {
-      if ((m.facts().info().access() & ACC_SYNTHETIC) != 0 || !isEntryPoint(m)) {
+      // parity: only main counts for the reference analyzer, not threads or tasks
+      if ((m.facts().info().access() & ACC_SYNTHETIC) != 0 || !isEntryPoint(m) || s.options().referenceParity() && !m.name().equals("main")) {
         continue;
       }
       Map<String, String> ex = escaping(m, 0);

@@ -45,8 +45,12 @@ public class NegativeIndexCheck extends DeepCheck {
       return;
     }
     String message = "\"" + search + "\" returns -1 when nothing is found; check the result before using it as an index.";
+    // parity: an index use in the same method is not a reference class, only one in the called method
+    boolean parity = summaries.get().options().referenceParity();
     if (isIndexUse(mit, parent)) {
-      reportIssue(mit, message);
+      if (!parity) {
+        reportIssue(mit, message);
+      }
     } else if (parent instanceof VariableTree v && Trees.isLocal(v.symbol())) {
       List<IdentifierTree> usages = new ArrayList<>(v.symbol().usages());
       if (usages.isEmpty() || usages.stream().anyMatch(u -> u.parent() instanceof org.sonar.plugins.java.api.tree.AssignmentExpressionTree a && a.variable() == u)) {
@@ -55,7 +59,9 @@ public class NegativeIndexCheck extends DeepCheck {
       usages.sort((a, b) -> a.identifierToken().range().start().compareTo(b.identifierToken().range().start()));
       IdentifierTree first = usages.get(0);
       if (isIndexUse(first, first.parent())) {
-        reportIssue(first, message);
+        if (!parity) {
+          reportIssue(first, message);
+        }
       } else if (passedAsIndex(first, first.parent())) {
         reportIssue(first, "\"" + search + "\" returns -1 when nothing is found, and the called method uses this value as an index.");
       }

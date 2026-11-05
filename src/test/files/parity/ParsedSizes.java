@@ -13,7 +13,7 @@ class Limits {
 
   boolean check(Map<String, String> cfg) {
     int v = Integer.parseInt(cfg.get("v"));
-    if (v > 255) { // Noncompliant
+    if (v > 255) { // a bound check outside a loop: not a reference class
       return false;
     }
     return true;
@@ -26,7 +26,7 @@ class Limits {
   boolean range(Map<String, String> cfg) {
     int lo = Integer.parseInt(cfg.get("lo"));
     int hi = Integer.parseInt(cfg.get("hi"));
-    if (hi < lo) { // Noncompliant
+    if (hi < lo) { // a bound check outside a loop: not a reference class
       return false;
     }
     return true;
@@ -34,7 +34,7 @@ class Limits {
 
   boolean negative(Map<String, String> cfg) {
     int n = Integer.parseInt(cfg.get("n"));
-    if (n < 0) { // Noncompliant
+    if (n < 0) { // a bound check outside a loop: not a reference class
       return false;
     }
     return true;

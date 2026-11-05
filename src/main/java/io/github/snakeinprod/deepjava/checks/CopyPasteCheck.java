@@ -32,70 +32,7 @@ public class CopyPasteCheck extends DeepCheck {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.BLOCK, Tree.Kind.METHOD_INVOCATION, Tree.Kind.IF_STATEMENT);
-  }
-
-  /**
-   * Parity mode: {@code if (a.getX() != null) a.setX(b.getX())} tests the target instead of the source; and
-   * {@code if/else} branches that are the same code except one small expression.
-   */
-  private void branches(org.sonar.plugins.java.api.tree.IfStatementTree ifs) {
-    for (MethodInvocationTree g : Trees.collect(ifs.condition(), MethodInvocationTree.class)) {
-      ExpressionTree r = Trees.receiver(g);
-      Symbol tested = r == null ? null : Trees.symbol(r);
-      if (tested == null || !g.arguments().isEmpty() || !Trees.name(g).matches("(get|is)[A-Z].*")) {
-        continue;
-      }
-      String prop = decap(Trees.name(g).replaceFirst("^(get|is)", ""));
-      for (MethodInvocationTree m : Trees.collect(ifs.thenStatement(), MethodInvocationTree.class)) {
-        Copy c = copy(m);
-        if (c != null && tested.equals(c.target()) && c.prop().equals(prop) && c.srcProp().equals(prop) && !c.source().equals(tested)) {
-          reportIssue(g, "The condition tests \"" + tested.name() + "." + Trees.name(g) + "()\" but the branch copies \"" + c.source().name()
-            + "." + Trees.name(g) + "()\": should the condition test \"" + c.source().name() + "\"?");
-          return;
-        }
-      }
-    }
-    if (ifs.elseStatement() == null) {
-      return;
-    }
-    // if / else, or if / else if: compare the two bodies
-    Tree other = ifs.elseStatement() instanceof org.sonar.plugins.java.api.tree.IfStatementTree elseIf ? elseIf.thenStatement() : ifs.elseStatement();
-    String a = text(ifs.thenStatement());
-    String b = text(other);
-    if (a == null || b == null || a.equals(b) || a.length() < 20 || a.length() > MAX_TEXT || b.length() > MAX_TEXT) {
-      return;
-    }
-    int pre = 0;
-    while (pre < a.length() && pre < b.length() && a.charAt(pre) == b.charAt(pre)) {
-      pre++;
-    }
-    int suf = 0;
-    while (suf < a.length() - pre && suf < b.length() - pre && a.charAt(a.length() - 1 - suf) == b.charAt(b.length() - 1 - suf)) {
-      suf++;
-    }
-    String da = a.substring(pre, a.length() - suf).trim();
-    String db = b.substring(pre, b.length() - suf).trim();
-    if (da.length() <= 40 && db.length() <= 40 && (pre + suf) * 2 > Math.max(a.length(), b.length())) {
-      reportIssue(ifs.elseKeyword(), "The two branches are the same code except \"" + da + "\" and \"" + db + "\": is one of them a copy "
-        + "that was not fully edited?");
-    }
-  }
-
-  /** Source text of a tree, whitespace collapsed. */
-  private String text(Tree t) {
-    var start = t.firstToken().range().start();
-    var end = t.lastToken().range().end();
-    List<String> lines = context.getFileLines();
-    StringBuilder sb = new StringBuilder();
-    for (int l = start.line(); l <= end.line(); l++) {
-      String line = lines.get(l - 1);
-      int from = l == start.line() ? start.columnOffset() : 0;
-      int to = l == end.line() ? Math.min(end.columnOffset(), line.length()) : line.length();
-      // comments are not code
-      sb.append(line.substring(Math.min(from, to), to).replaceAll("(^|\\s)//.*$", "")).append(' ');
-    }
-    return sb.toString().replaceAll("\\s+", " ").replaceAll("^\\{|\\}\\s*$", "").trim();
+    return List.of(Tree.Kind.BLOCK, Tree.Kind.METHOD_INVOCATION);
   }
 
   /** {@code left.lp OP right.rp}. */
@@ -108,74 +45,6 @@ public class CopyPasteCheck extends DeepCheck {
    * {@code prop = source.getSrcProp()}; {@code value} is the getter call, {@code target} the receiver (or null).
    */
   private record Copy(ExpressionTree value, String prop, Symbol source, String srcProp, Symbol target) {
-  }
-
-  /**
-   * Parity mode: two neighbouring statements with the same tokens, where the second renamed a value in one place but
-   * not in a related one ({@code if (nonAnchorType != null) add(anchorType)} after {@code if (anchorType != null) add(anchorType)}).
-   */
-  private void renamedPairs(BlockTree block) {
-    List<StatementTree> body = block.body();
-    for (int i = 1; i < body.size(); i++) {
-      String ta = text(body.get(i - 1));
-      String tb = text(body.get(i));
-      if (ta.length() > MAX_TEXT || tb.length() > MAX_TEXT) {
-        continue;
-      }
-      List<String> a = tokens(ta);
-      List<String> b = tokens(tb);
-      if (a.size() != b.size() || a.size() < 4) {
-        continue;
-      }
-      List<Integer> diff = new ArrayList<>();
-      for (int k = 0; k < a.size(); k++) {
-        if (!a.get(k).equals(b.get(k))) {
-          diff.add(k);
-        }
-      }
-      if (diff.isEmpty() || diff.size() > 3) {
-        continue;
-      }
-      for (int d : diff) {
-        String from = stem(a.get(d));
-        String to = stem(b.get(d));
-        if (from.length() < 3 || !to.toLowerCase().contains(from.toLowerCase()) || to.equalsIgnoreCase(from)) {
-          continue;
-        }
-        for (int k = 0; k < a.size(); k++) {
-          if (!diff.contains(k) && isName(a.get(k)) && a.get(k).toLowerCase().contains(from.toLowerCase())
-            && !usedTogetherElsewhere(body, i, b.get(d), a.get(k))) {
-            reportIssue(body.get(i), "This line renames \"" + a.get(d) + "\" to \"" + b.get(d) + "\" but still uses \"" + a.get(k)
-              + "\": is it a copy of the line above that was not fully edited?");
-            return;
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * Another statement of the block (not the pair itself) uses the new name and the kept one in the same order: the
-   * combination is deliberate.
-   */
-  private boolean usedTogetherElsewhere(List<StatementTree> body, int i, String renamed, String kept) {
-    for (int j = 0; j < body.size(); j++) {
-      if (j == i || j == i - 1) {
-        continue;
-      }
-      String t = text(body.get(j));
-      if (t.length() > MAX_TEXT) {
-        continue;
-      }
-      List<String> tokens = tokens(t);
-      int r = tokens.indexOf(renamed);
-      int k = tokens.indexOf(kept);
-      if (r >= 0 && k >= 0 && Integer.compare(r, k) == Integer.compare(tokens(text(body.get(i))).indexOf(renamed),
-        tokens(text(body.get(i))).indexOf(kept))) {
-        return true;
-      }
-    }
-    return false;
   }
 
   private static final String[][] TWINS = {{"min", "max"}, {"start", "end"}, {"first", "last"}, {"begin", "end"}, {"from", "to"},
@@ -272,7 +141,6 @@ public class CopyPasteCheck extends DeepCheck {
   }
 
   /** Longer statements are data (an embedded document, a generated table), never a renamed copy. */
-  private static final int MAX_TEXT = 2000;
 
   /** Literals, names, numbers and single characters; a plain scan, no regex (an 8,000-character literal is fine). */
   static List<String> tokens(String text) {
@@ -308,28 +176,13 @@ public class CopyPasteCheck extends DeepCheck {
     return out;
   }
 
-  private static boolean isName(String t) {
-    return Character.isJavaIdentifierStart(t.charAt(0));
-  }
-
-  private static String stem(String t) {
-    return t.startsWith("\"") ? t.substring(1, Math.max(1, t.length() - 1)) : t;
-  }
-
   @Override
   public void visitNode(Tree tree) {
     if (tree instanceof BlockTree block && summaries.get().options().referenceParity()) {
-      guarded(block, () -> renamedPairs(block));
       guarded(block, () -> constantToTwin(block));
     }
     if (tree instanceof MethodInvocationTree call && summaries.get().options().referenceParity()) {
       guarded(call, () -> argumentTwin(call));
-    }
-    if (tree instanceof org.sonar.plugins.java.api.tree.IfStatementTree ifs) {
-      if (summaries.get().options().referenceParity()) {
-        guarded(ifs, () -> branches(ifs));
-      }
-      return;
     }
     List<Copy> copies = new ArrayList<>();
     if (tree instanceof BlockTree block) {

@@ -40,6 +40,14 @@ class Accounts {
     return null;
   }
 
+  boolean a2(UserRepository r) {
+    return r.findByName("a2") != null;
+  }
+
+  boolean a3(UserRepository r) {
+    return r.findByName("a3") == null;
+  }
+
   String c(UserRepository r) {
     return r.findByName("c").id(); // Noncompliant
   }
@@ -53,6 +61,14 @@ class Accounts {
     return s != null ? s.length() : 0;
   }
 
+  int d2(Versioned<String> v) {
+    return v.getVersion() != null ? 2 : 0;
+  }
+
+  int d3(Versioned<String> v) {
+    return v.getVersion() == null ? 3 : 0;
+  }
+
   int f(Versioned<String> v) {
     return v.getVersion().length(); // Noncompliant
   }
@@ -62,10 +78,18 @@ class Accounts {
     return s.lookup("g").length();
   }
 
-  // main code has 3 sites (1 checked), tests check 4 more: 5 of 7 counting tests
+  // main code has 5 sites (2 checked), tests check 4 more: 6 of 9 counting tests
   int h(Settings s) {
     String v = s.section("h");
     return v == null ? 0 : v.length();
+  }
+
+  boolean h2(Settings s) {
+    return s.section("h2") != null;
+  }
+
+  int k(Settings s) {
+    return s.section("k").length(); // Noncompliant
   }
 
   int i(Settings s) {

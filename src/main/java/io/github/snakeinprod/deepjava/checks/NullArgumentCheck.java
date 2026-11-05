@@ -135,9 +135,6 @@ public class NullArgumentCheck extends DeepCheck {
     if (a.is(Tree.Kind.NULL_LITERAL)) {
       return "null";
     }
-    if (s.options().referenceParity() && lombokNullCompared(s, a)) {
-      return "a field that the Lombok-generated equals() compares to null";
-    }
     Symbol local = Trees.symbol(a);
     if (Trees.isLocal(local) && local.declaration() instanceof org.sonar.plugins.java.api.tree.VariableTree d && d.initializer() != null
       && notReassigned(local) && !nullTested(local)) {
@@ -147,7 +144,8 @@ public class NullArgumentCheck extends DeepCheck {
       }
       a = Trees.skip(d.initializer());
     }
-    if (a instanceof MethodInvocationTree call) {
+    // parity: a method result passed on is not a reference class (declared nullables are NullableDereference's)
+    if (a instanceof MethodInvocationTree call && !s.options().referenceParity()) {
       String key = Trees.resolveCallKey(call, s);
       Optional<Summaries.NullReason> r = key == null ? Optional.empty() : s.nullReturn(key);
       if (r.isPresent() && r.get().guards().isEmpty() && s.isReportable(key, r.get())) {
@@ -159,28 +157,5 @@ public class NullArgumentCheck extends DeepCheck {
 
   private static boolean nullTested(Symbol local) {
     return local.usages().stream().anyMatch(u -> Derefs.isNullTest(Derefs.parent(u), u));
-  }
-
-  /** A field (or its plain getter) of a class with a Lombok-generated {@code equals}, which null-checks every field. */
-  private static boolean lombokNullCompared(Summaries s, ExpressionTree a) {
-    String field = null;
-    if (a instanceof MethodInvocationTree call && call.arguments().isEmpty()) {
-      String key = Trees.resolveCallKey(call, s);
-      List<Summaries.Method> targets = key == null ? List.of() : s.targets(key);
-      if (targets.size() == 1 && targets.get(0).facts().nulls().returnedFields().size() == 1) {
-        field = targets.get(0).facts().nulls().returnedFields().iterator().next();
-      }
-    } else {
-      Symbol f = Trees.symbol(a);
-      if (Trees.isField(f) && !f.type().isPrimitive() && !f.isStatic()) {
-        field = f.owner().type().erasure().fullyQualifiedName().replace('.', '/') + "#" + f.name();
-      }
-    }
-    if (field == null) {
-      return false;
-    }
-    io.github.snakeinprod.deepjava.prepass.ClassFacts owner = s.classes().get(field.substring(0, field.indexOf('#')));
-    return owner != null && owner.methods().containsKey("canEqual(Ljava/lang/Object;)Z")
-      && owner.fields().containsKey(field.substring(field.indexOf('#') + 1));
   }
 }

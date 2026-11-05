@@ -58,4 +58,52 @@ class LoopBounds {
       }
     }
   }
+
+  String exitsByReturn(Map<String, String> cfg, String[] items) {
+    for (String item : items) {
+      int v = Integer.parseInt(cfg.get(item));
+      if (v > 14) { // Noncompliant
+        return "error";
+      }
+    }
+    return "ok";
+  }
+
+  void exitsByThrow(Map<String, String> cfg, String[] items) {
+    for (String item : items) {
+      int v = Integer.parseInt(cfg.get(item));
+      if (v < 0 || v > 255) { // Noncompliant
+        throw new IllegalArgumentException(item);
+      }
+    }
+  }
+
+  boolean exitsByBreak(Map<String, String> cfg, String[] items) {
+    boolean flag = false;
+    for (String item : items) {
+      int v = Integer.parseInt(cfg.get(item));
+      if (v >= 100) { // Noncompliant
+        flag = true;
+        break;
+      }
+    }
+    return flag;
+  }
+
+  void repeat(int times) {
+    for (int i = 0; i < times; i++) { // Noncompliant
+      System.out.println(i);
+    }
+  }
+
+  void passedToLoopingHelper(Map<String, String> cfg) {
+    repeat(Integer.parseInt(cfg.get("times"))); // Noncompliant
+  }
+
+  void lineLength(java.io.BufferedReader r) throws java.io.IOException {
+    String line = r.readLine();
+    for (int i = 0; i < line.length(); i++) { // Noncompliant
+      System.out.println(line.charAt(i));
+    }
+  }
 }

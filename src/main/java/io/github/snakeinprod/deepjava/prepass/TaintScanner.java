@@ -151,11 +151,26 @@ public final class TaintScanner implements Opcodes {
           }
         }
       }
+      // loops: [head, back jump]
+      List<int[]> loops = new ArrayList<>();
+      for (int i = 0; i < n; i++) {
+        if (insns.get(i) instanceof JumpInsnNode j && insns.indexOf(j.label) <= i) {
+          loops.add(new int[] {insns.indexOf(j.label), i});
+        }
+      }
       for (int i = 0; i < n; i++) {
         if (insns.get(i) instanceof JumpInsnNode j && j.getOpcode() != GOTO && j.getOpcode() != JSR) {
           int t = insns.indexOf(j.label);
           if (t <= i || realBefore(j.label) instanceof JumpInsnNode g && g.getOpcode() == GOTO && insns.indexOf(g.label) <= i) {
             loopConditions.add(i);
+            continue;
+          }
+          for (int[] loop : loops) {
+            // a check in the body whose branch leaves the loop (return, throw, break) decides whether it ends
+            if (loop[0] <= i && i < loop[1] && (leaves(t, loop[1]) || leaves(i + 1, loop[1]))) {
+              loopConditions.add(i);
+              break;
+            }
           }
         }
       }
@@ -167,6 +182,31 @@ public final class TaintScanner implements Opcodes {
           handlers[i].add(tcb);
         }
       }
+    }
+
+    /** Straight-line code from {@code from} returns, throws or jumps past {@code back} before any other jump. */
+    private boolean leaves(int from, int back) {
+      if (from > back) {
+        return true;
+      }
+      for (int k = from, steps = 0; k < insns.size() && steps < 40; k++) {
+        AbstractInsnNode insn = insns.get(k);
+        int op = insn.getOpcode();
+        if (op < 0) {
+          continue;
+        }
+        steps++;
+        if (op >= IRETURN && op <= RETURN || op == ATHROW) {
+          return true;
+        }
+        if (insn instanceof JumpInsnNode j) {
+          return op == GOTO && insns.indexOf(j.label) > back;
+        }
+        if (insn instanceof TableSwitchInsnNode || insn instanceof LookupSwitchInsnNode) {
+          return false;
+        }
+      }
+      return false;
     }
 
     private static AbstractInsnNode realBefore(AbstractInsnNode insn) {

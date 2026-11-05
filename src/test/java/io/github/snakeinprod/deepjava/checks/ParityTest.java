@@ -16,11 +16,6 @@ class ParityTest {
   Path classes;
 
   @Test
-  void lombok_null_compared_field_passed_to_dereferencing_method() throws Exception {
-    verify("src/test/files/parity/LombokFieldPassed.java", s -> new NullArgumentCheck(() -> s));
-  }
-
-  @Test
   void null_dereferenced_in_a_later_branch() throws Exception {
     verify("src/test/files/parity/NullInLaterBranch.java", s -> new NullAssignedThenDereferencedCheck(() -> s));
   }
@@ -38,11 +33,6 @@ class ParityTest {
   @Test
   void numbers_into_cookies() throws Exception {
     verify("src/test/files/parity/CookieNumbers.java", s -> (JavaFileScanner) TaintChecks.create("TaintedHeader", () -> s));
-  }
-
-  @Test
-  void copy_paste_in_branches() throws Exception {
-    verify("src/test/files/parity/Branches.java", s -> new CopyPasteCheck(() -> s));
   }
 
   @Test
@@ -102,6 +92,26 @@ class ParityTest {
   }
 
   @Test
+  void paths_reported_where_the_file_is_used() throws Exception {
+    verify("src/test/files/parity/PathUses.java", s -> (JavaFileScanner) TaintChecks.create("TaintedPath", () -> s));
+  }
+
+  @Test
+  void null_checks_in_catch_of_values_assigned_after_the_last_throw() throws Exception {
+    verify("src/test/files/parity/CatchNullChecks.java", s -> new UnreachableCodeCheck(() -> s));
+  }
+
+  @Test
+  void declared_nullables_passed_on_in_lambdas_and_after_a_check() throws Exception {
+    verify("src/test/files/parity/DeclaredPassed.java", s -> new NullableDereferenceCheck(() -> s));
+  }
+
+  @Test
+  void statistics_in_lambdas() throws Exception {
+    verify("src/test/files/parity/LambdaStatistics.java", s -> new NullCheckedAtMostCallSitesCheck(() -> s));
+  }
+
+  @Test
   void copy_paste_roles_repeated_in_the_block() throws Exception {
     verify("src/test/files/parity/CopyPasteRoles.java", s -> new CopyPasteCheck(() -> s));
   }
@@ -113,7 +123,7 @@ class ParityTest {
 
   @Test
   void nullable_passed_to_dereferencing_methods() throws Exception {
-    verify("src/test/files/parity/NullablePassed.java", s -> new NullArgumentCheck(() -> s));
+    verify("src/test/files/parity/NullablePassed.java", s -> new NullableDereferenceCheck(() -> s));
   }
 
   @Test

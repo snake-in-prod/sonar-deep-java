@@ -71,25 +71,33 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
     Symbol.MethodSymbol sym = mit.methodSymbol();
     Summaries s = summaries.get();
     String key = Trees.resolveCallKey(mit, s);
-    Optional<NullReason> reason = reportableReason(mit, s, key);
+    boolean parity = s.options().referenceParity();
+    // parity: a second call after a null check of the first is not checked for the reference (declared nullables)
+    Optional<NullReason> reason = reportableReason(mit, s, key, !parity);
     if (reason.isEmpty()) {
       return;
     }
     NullReason r = reason.get();
-    if (!reports(declared(r))) {
+    // parity: "returns null" only with a project location at the end of the chain (not a library model or mapper)
+    if (!reports(declared(r)) || parity && !declared(r) && (r.root().location() == null || isNullCheckedElsewhere(mit))) {
       return;
     }
     Summaries.CallStats stats = s.callStats(key);
     String evidence = !r.isStrong() && stats.checked() > 0 ?"; null-checked at " + stats.checked() + " of " + stats.sites() + " call sites" : "";
     String message = "\"" + r.method() + "\" can return null (" + r.detail() + evidence + "); check the result before dereferencing it.";
 
-    boolean parity = s.options().referenceParity();
     Tree parent = skipParentheses(mit);
     boolean boxed = Derefs.isBoxed(mit.symbolType()) || key.matches(".*\\)Ljava/lang/(Long|Integer|Short|Byte|Boolean|Double|Float|Character);");
     if (Derefs.isDereference(parent, mit, boxed) || parity && isRequireNonNullArgument(parent, mit)) {
       reportIssue(Trees.methodName(mit), message, declarationLocation(sym), null);
+    } else if (parity && declared(r) && NullArgumentCheck.passedToDereferencingParameter(s, mit, parent)) {
+      // parity: a declared nullable passed to a parameter that the callee dereferences
+      reportIssue(Trees.methodName(mit), message, declarationLocation(sym), null);
     } else if (parent instanceof VariableTree v && isLocal(v.symbol())) {
       IdentifierTree use = firstUseIfDereference(v.symbol(), parity);
+      if (use == null && parity && declared(r)) {
+        use = firstUseIfPassed(s, v.symbol());
+      }
       if (use != null) {
         List<JavaFileScannerContext.Location> secondaries = new ArrayList<>(declarationLocation(sym));
         secondaries.add(new JavaFileScannerContext.Location("Value assigned here", mit));
@@ -149,13 +157,18 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
 
   /** Why the call's result can be null, when a dereference of it is reported by this rule. */
   static Optional<NullReason> reportableReason(MethodInvocationTree mit, Summaries s, String key) {
+    return reportableReason(mit, s, key, true);
+  }
+
+  /** @param checksElsewhere a null check of the same call elsewhere in the method counts as handling it */
+  static Optional<NullReason> reportableReason(MethodInvocationTree mit, Summaries s, String key, boolean checksElsewhere) {
     if (key == null) {
       return Optional.empty();
     }
     Symbol.MethodSymbol sym = mit.methodSymbol();
     Optional<NullReason> reason = s.nullReturn(key);
     if (reason.isEmpty() || isGuarded(mit, reason.get().guards()) || !s.isReportable(key, reason.get())
-      || !sym.isUnknown() && isStandardSystemProperty(sym, mit) || isNullCheckedElsewhere(mit)
+      || !sym.isUnknown() && isStandardSystemProperty(sym, mit) || checksElsewhere && isNullCheckedElsewhere(mit)
       || reason.get().kind() == NullReason.Kind.NULL_FOR_NULL_ARGUMENT && !s.options().referenceParity() && isNonNullArgument(mit)) {
       return Optional.empty();
     }
@@ -254,6 +267,25 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
   /** The first dereference of a never-reassigned local before any null test (see {@link Derefs#firstDereference}). */
   static IdentifierTree firstUseIfDereference(Symbol var, boolean parity) {
     return Derefs.firstDereference(var, parity);
+  }
+
+  /** Parity: the first use of a never-reassigned local, before any null test, passed to a parameter the callee dereferences. */
+  private static IdentifierTree firstUseIfPassed(Summaries s, Symbol var) {
+    List<IdentifierTree> usages = new ArrayList<>(var.usages());
+    if (usages.stream().anyMatch(u -> u.parent() instanceof AssignmentExpressionTree a && a.variable() == u)) {
+      return null;
+    }
+    usages.sort((a, b) -> a.identifierToken().range().start().compareTo(b.identifierToken().range().start()));
+    for (IdentifierTree u : usages) {
+      Tree p = Derefs.parent(u);
+      if (Derefs.isNullTest(p, u)) {
+        return null;
+      }
+      if (NullArgumentCheck.passedToDereferencingParameter(s, u, p)) {
+        return u;
+      }
+    }
+    return null;
   }
 
   /**

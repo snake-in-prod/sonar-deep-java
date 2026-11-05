@@ -60,6 +60,14 @@ class DtoUsers {
   int g(Dto d) {
     return d.getEndDate() == null ? 0 : 1;
   }
+
+  int h(Dto d) {
+    return d.getEndDate() != null ? 2 : 0;
+  }
+
+  int i(Dto d) {
+    return d.getEndDate() == null ? 3 : 0;
+  }
 }
 
 class Headers {
@@ -76,5 +84,13 @@ class Headers {
 
   int c(HttpServletRequest r) {
     return v.parse(r.getHeader("C")); // Noncompliant
+  }
+
+  int d(HttpServletRequest r) {
+    return r.getHeader("D") == null ? 0 : 1;
+  }
+
+  int e(HttpServletRequest r) {
+    return r.getHeader("E") != null ? 1 : 0;
   }
 }

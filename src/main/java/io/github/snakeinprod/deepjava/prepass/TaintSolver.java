@@ -111,6 +111,7 @@ final class TaintSolver {
         for (SinkFlow f : sinkParams(m, 0)) {
           int p = f.param() - self;
           if (!"PATH".equals(f.sink().kind()) || p < 0 || p >= params.length
+            || s.options().referenceParity() && PATH_BUILDERS.contains(f.sink().api())
             || !Set.of("Ljava/lang/String;", "Ljava/io/File;", "Ljava/nio/file/Path;").contains(params[p].getDescriptor())) {
             continue;
           }
@@ -267,7 +268,14 @@ final class TaintSolver {
     return "SIZE".equals(kind) || "SIZECMP".equals(kind) ? numeric(label) : !numeric(label);
   }
 
+  /** Parity: a path is reported where the file is used, not where its name is built. */
+  private static final Set<String> PATH_BUILDERS = Set.of("File.new()", "Paths.get()", "Path.of()", "Path.resolve()");
+
   private void report(Sink sink, ClassFacts where, Set<String> labels, String passedAt) {
+    boolean parity = s.options().referenceParity();
+    if (parity && "PATH".equals(sink.kind()) && PATH_BUILDERS.contains(sink.api())) {
+      return;
+    }
     for (String l : labels) {
       String b = base(l);
       // through a callee, the sink side already checked the kind of value (accept() filtered the caller side)
@@ -281,8 +289,11 @@ final class TaintSolver {
         continue;
       }
       // parity: loop bounds are a reference class of their own
-      if ("TaintedSize".equals(rule) && s.options().referenceParity() && sink.api() != null && sink.api().startsWith("loop bound")) {
+      if ("TaintedSize".equals(rule) && parity && sink.api() != null && sink.api().startsWith("loop bound")) {
         rule = "TaintedLoopBound";
+      } else if (parity && "SIZECMP".equals(sink.kind())) {
+        // parity: a bound check that does not decide whether a loop ends is not a reference class
+        continue;
       }
       String key = rule + "|" + where.sourcePath() + "|" + sink.line();
       String message = message(sink, kind, parts.length > 1 ? parts[1] : "?", parts.length > 2 ? parts[2] : "?", passedAt);

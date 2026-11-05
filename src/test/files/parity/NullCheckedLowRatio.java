@@ -43,6 +43,6 @@ class Users {
   }
 
   boolean h(Config c, int distance) {
-    return distance <= c.limit(); // Noncompliant
+    return distance <= c.limit(); // 2 of 4 sites: under the parity ratio
   }
 }

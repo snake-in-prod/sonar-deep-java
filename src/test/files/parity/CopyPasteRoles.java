@@ -26,7 +26,7 @@ class Row {
 class Reports {
   void counts(Map<String, Integer> stats, int complianceCount) {
     stats.put("compliance", complianceCount);
-    stats.put("nonCompliance", complianceCount); // Noncompliant
+    stats.put("nonCompliance", complianceCount);
   }
 
   // the same combination appears again further down: deliberate

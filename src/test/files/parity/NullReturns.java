@@ -20,7 +20,7 @@ class Splitter {
 
 class Waiter {
   String await(Future<String> f) throws Exception {
-    return f.get(5, TimeUnit.SECONDS).trim(); // Noncompliant
+    return f.get(5, TimeUnit.SECONDS).trim(); // library model: not a reference class
   }
 
   // annotated nullable in the library: NullableDereference in parity mode
@@ -29,7 +29,7 @@ class Waiter {
   }
 
   int copy(ArrayList<String> items) {
-    return SerializationUtils.clone(items).size(); // Noncompliant
+    return SerializationUtils.clone(items).size(); // library model: not a reference class
   }
 
   // declared nullable: NullableDereference in parity mode
