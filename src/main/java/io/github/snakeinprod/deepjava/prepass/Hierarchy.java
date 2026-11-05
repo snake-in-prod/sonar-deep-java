@@ -41,9 +41,25 @@ public final class Hierarchy {
     static final Library NONE = new Library(Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
   }
 
+  private final java.util.Set<Path> libraryPaths = new java.util.LinkedHashSet<>();
+
   public Hierarchy(Map<String, ClassFacts> project, List<Path> libraryPaths) {
     this.project = project;
-    for (Path lib : libraryPaths) {
+    addLibraries(libraryPaths);
+  }
+
+  /**
+   * Libraries of a module analysed later: opened and added; answers computed without them are forgotten.
+   *
+   * @return how many were new
+   */
+  public synchronized int addLibraries(java.util.Collection<Path> paths) {
+    int added = 0;
+    for (Path lib : paths) {
+      if (!libraryPaths.add(lib)) {
+        continue;
+      }
+      added++;
       if (java.nio.file.Files.isDirectory(lib)) {
         libraryDirs.add(lib);
         continue;
@@ -55,6 +71,11 @@ public final class Hierarchy {
         // neither a jar nor a directory: ignored
       }
     }
+    if (added > 0) {
+      supers.clear();
+      libraryClasses.clear();
+    }
+    return added;
   }
 
   /** A library class (not a project or JDK class), or {@link Library#NONE}. */
@@ -119,7 +140,7 @@ public final class Hierarchy {
     return null;
   }
 
-  public List<String> directSupertypes(String name) {
+  public synchronized List<String> directSupertypes(String name) {
     return supers.computeIfAbsent(name, this::load);
   }
 

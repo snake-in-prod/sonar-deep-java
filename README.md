@@ -115,6 +115,7 @@ Full procedure with verification and rollback, written to be followed by a perso
 |----------|---------|---------|
 | `sonar.deepjava.models` | none | Extra library model JSON files (see below) |
 | `sonar.deepjava.cacheDir` | `~/.sonar/deepjava-cache` | Per-class summary cache; unchanged classes are not re-analysed |
+| `sonar.deepjava.prepassCache` | `true` | Compute the project-wide pre-pass once per scanner JVM and reuse it for every module with the same binaries and settings; `false` recomputes it per module (for comparison only) |
 | `sonar.deepjava.maxStepsPerMethod` | `20000` | Data-flow budget per method |
 | `sonar.deepjava.maxVirtualTargets` | `8` | Virtual calls with more implementations are ignored |
 | `sonar.deepjava.statistics.minCallSites` | `5` | Statistical rules need at least this many sites... |
@@ -169,7 +170,12 @@ annotated `@ConfigurationProperties`, are sources. Taint source kinds:
    Two data flows run per method: one for nullness, value use, locks and exceptions (branch-sensitive on null
    checks, with path conditions for "null only if an argument is null"), one for taint (labels for parameters,
    sources and call results; constant folding prunes dead branches; maps are tracked per constant key).
-   Results are cached by class file hash.
+   Results are cached by class file hash. The solved pre-pass is kept for the whole scanner run, keyed by
+   the settings and the class files (count, size, last modified) of all module binaries: every module after the
+   first reuses it (log line `Deep Java pre-pass: reused`), and new library jars or test class directories of a
+   module only extend it (`extended with N libraries and M test class directories`). Binaries outside
+   `target/classes` and `build/classes/*/main` that the scanner does not list up front join when their module is
+   analysed and cause one recomputation each.
 2. **Solving**: call targets are resolved by class hierarchy analysis over project types; summaries are
    composed across calls (null returns, taint from parameters to returns and sinks, transitive locks and
    exceptions); library models are applied.

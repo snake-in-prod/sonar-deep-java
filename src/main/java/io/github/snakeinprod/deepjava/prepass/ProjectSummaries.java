@@ -55,7 +55,23 @@ public class ProjectSummaries implements Supplier<Summaries> {
   private final Map<String, ClassFacts> scanned = new HashMap<>();
   private boolean discovered;
   private boolean stale = true;
+  private boolean extend;
+  private boolean announce;
+  private String key;
   private Summaries summaries;
+
+  /**
+   * The last pre-pass of this JVM. The scanner analyses the modules of a project one after another in one JVM, and
+   * every module sees the same compiled classes: the whole-program result is computed once and reused. One entry only,
+   * so a JVM that scans many projects does not keep them all.
+   */
+  private record Memo(String key, Summaries summaries) {
+  }
+
+  private static Memo memo;
+
+  /** Full computations so far (tests check that modules reuse one). */
+  static int computations;
 
   public ProjectSummaries(Configuration config) {
     this.config = config;
@@ -65,29 +81,143 @@ public class ProjectSummaries implements Supplier<Summaries> {
   /** Called for each module with its own settings, before its files are analysed. */
   public synchronized void addModule(Path moduleBaseDir, Configuration moduleConfig) {
     try {
-      boolean changed = binaries.addAll(resolve(moduleBaseDir, moduleConfig.getStringArray("sonar.java.binaries")));
-      changed |= libraries.addAll(resolve(moduleBaseDir, moduleConfig.getStringArray("sonar.java.libraries")));
-      changed |= testBinaries.addAll(resolve(moduleBaseDir, moduleConfig.getStringArray("sonar.java.test.binaries")));
-      stale |= changed;
+      // new compiled classes change everything; new libraries and test classes only extend the result
+      stale |= binaries.addAll(resolve(moduleBaseDir, moduleConfig.getStringArray("sonar.java.binaries")));
+      extend |= libraries.addAll(resolve(moduleBaseDir, moduleConfig.getStringArray("sonar.java.libraries")));
+      extend |= testBinaries.addAll(resolve(moduleBaseDir, moduleConfig.getStringArray("sonar.java.test.binaries")));
+      if (!cacheEnabled()) {
+        stale |= extend;
+      }
+      announce = true;
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
   }
 
+  private boolean cacheEnabled() {
+    return config.getBoolean(DeepJavaPlugin.PREPASS_CACHE).orElse(true);
+  }
+
+  private boolean parity() {
+    return config.getBoolean(DeepJavaPlugin.REFERENCE_PARITY).orElse(false);
+  }
+
   @Override
   public synchronized Summaries get() {
-    if (stale) {
-      try {
-        summaries = build();
+    try {
+      if (stale) {
+        long start = System.currentTimeMillis();
+        discover();
+        key = cacheEnabled() ? key() : null;
+        synchronized (ProjectSummaries.class) {
+          if (key != null && memo != null && memo.key().equals(key)) {
+            summaries = memo.summaries();
+            LOG.info("Deep Java pre-pass: reused (key {}), {} classes, {} ms", key, summaries.classes().size(),
+              System.currentTimeMillis() - start);
+          } else {
+            summaries = build(key);
+            memo = key == null ? null : new Memo(key, summaries);
+          }
+        }
         stale = false;
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
+        extend = true;
+      } else if (announce) {
+        LOG.info("Deep Java pre-pass: reused (key {}), {} classes", key == null ? "cache off" : key, summaries.classes().size());
       }
+      announce = false;
+      if (extend) {
+        extend(summaries);
+        extend = false;
+      }
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
     }
     return summaries;
   }
 
-  private Summaries build() throws IOException {
+  /** Every module up front, so call-site statistics count the whole program from the first module on. */
+  private void discover() throws IOException {
+    if (!discovered) {
+      binaries.addAll(discoverOutputDirs(baseDir));
+      declaredModules(baseDir, "");
+      if (parity()) {
+        testBinaries.addAll(discoverTestDirs(baseDir));
+      }
+      discovered = true;
+    }
+  }
+
+  /** Adds the libraries and (parity mode) test classes that modules brought since the result was computed. */
+  private void extend(Summaries s) throws IOException {
+    long start = System.currentTimeMillis();
+    int libs = s.hierarchy().addLibraries(libraries);
+    if (libs > 0) {
+      s.forgetLibraryAnswers();
+    }
+    int tests = 0;
+    if (parity()) {
+      int maxSteps = config.getInt(DeepJavaPlugin.MAX_STEPS).orElse(20000);
+      TaintModels taintModels = TaintModels.load(resolve(baseDir, config.getStringArray(DeepJavaPlugin.MODELS)));
+      String version = CACHE_FORMAT + ":" + maxSteps + ":" + taintModels.digest();
+      for (Path dir : testBinaries) {
+        if (s.hasStats(dir)) {
+          continue;
+        }
+        List<ClassFacts> facts = new ArrayList<>();
+        forEachClass(List.of(dir), bytes -> {
+          String key = sha256(bytes) + ":" + version;
+          ClassFacts f = scanned.get(key);
+          f = f != null ? f : BytecodeScanner.scan(bytes, maxSteps, taintModels);
+          scanned.put(key, f);
+          facts.add(f);
+        });
+        facts.removeIf(f -> s.classes().containsKey(f.name()));
+        if (s.addStats(dir, facts)) {
+          tests++;
+        }
+      }
+    }
+    if (libs > 0 || tests > 0) {
+      LOG.info("Deep Java pre-pass: extended with {} libraries and {} test class directories in {} ms", libs, tests,
+        System.currentTimeMillis() - start);
+    }
+  }
+
+  /**
+   * Identifies a pre-pass result: the settings it depends on and the compiled classes (path, count, total size and
+   * latest modification time of the class files of each directory or jar).
+   */
+  private String key() throws IOException {
+    StringBuilder sb = new StringBuilder(CACHE_FORMAT + "|");
+    for (String k : List.of(DeepJavaPlugin.MAX_STEPS, DeepJavaPlugin.MAX_TARGETS, DeepJavaPlugin.MIN_SITES, DeepJavaPlugin.MIN_RATIO,
+      DeepJavaPlugin.NULLABLE_ANNOTATIONS, DeepJavaPlugin.NULLABLE_IGNORED, DeepJavaPlugin.DATA_SOURCES, DeepJavaPlugin.LOG_PARAMETERS_SAFE,
+      DeepJavaPlugin.REFERENCE_PARITY, DeepJavaPlugin.MODELS)) {
+      sb.append(k).append('=').append(String.join(",", config.getStringArray(k))).append('|');
+    }
+    List<Path> sorted = new ArrayList<>(binaries);
+    sorted.sort(null);
+    for (Path p : sorted) {
+      long[] stat = {0, 0, 0};
+      if (Files.isDirectory(p)) {
+        try (Stream<Path> files = Files.walk(p)) {
+          for (Path f : (Iterable<Path>) files.filter(x -> x.toString().endsWith(".class"))::iterator) {
+            stat[0]++;
+            stat[1] += Files.size(f);
+            stat[2] = Math.max(stat[2], Files.getLastModifiedTime(f).toMillis());
+          }
+        }
+      } else if (Files.exists(p)) {
+        stat[0] = 1;
+        stat[1] = Files.size(p);
+        stat[2] = Files.getLastModifiedTime(p).toMillis();
+      }
+      sb.append(p).append(':').append(stat[0]).append(':').append(stat[1]).append(':').append(stat[2]).append('|');
+    }
+    return sha256(sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)).substring(0, 16);
+  }
+
+  private Summaries build(String key) throws IOException {
+    computations++;
     long start = System.currentTimeMillis();
     int maxSteps = config.getInt(DeepJavaPlugin.MAX_STEPS).orElse(20000);
     Summaries.Thresholds thresholds = new Summaries.Thresholds(
@@ -97,12 +227,6 @@ public class ProjectSummaries implements Supplier<Summaries> {
     List<Path> models = resolve(baseDir, config.getStringArray(DeepJavaPlugin.MODELS));
     TaintModels taintModels = TaintModels.load(models);
     String version = CACHE_FORMAT + ":" + maxSteps + ":" + taintModels.digest();
-    if (!discovered) {
-      // every module up front, so call-site statistics count the whole program from the first module on
-      binaries.addAll(discoverOutputDirs(baseDir));
-      declaredModules(baseDir, "");
-      discovered = true;
-    }
 
     Path cacheFile = cacheFile();
     Map<String, ClassFacts> cache = scanned.isEmpty() ? readCache(cacheFile) : scanned;
@@ -110,43 +234,30 @@ public class ProjectSummaries implements Supplier<Summaries> {
     Map<String, ClassFacts> byName = new HashMap<>();
     int[] hits = {0};
     forEachClass(binaries, bytes -> {
-      String key = sha256(bytes) + ":" + version;
-      ClassFacts f = cache.get(key);
+      String classKey = sha256(bytes) + ":" + version;
+      ClassFacts f = cache.get(classKey);
       if (f != null) {
         hits[0]++;
       } else {
         f = BytecodeScanner.scan(bytes, maxSteps, taintModels);
       }
-      used.put(key, f);
+      used.put(classKey, f);
       byName.putIfAbsent(f.name(), f);
     });
-    boolean parity = config.getBoolean(DeepJavaPlugin.REFERENCE_PARITY).orElse(false);
-    List<ClassFacts> tests = new ArrayList<>();
-    if (parity) {
-      // parity: callers in test code count for the call-site statistics too
-      Set<Path> testDirs = new LinkedHashSet<>(testBinaries);
-      testDirs.addAll(discoverTestDirs(baseDir));
-      forEachClass(testDirs, bytes -> {
-        String key = sha256(bytes) + ":" + version;
-        ClassFacts f = cache.get(key);
-        f = f != null ? f : BytecodeScanner.scan(bytes, maxSteps, taintModels);
-        used.put(key, f);
-        if (!byName.containsKey(f.name())) {
-          tests.add(f);
-        }
-      });
-    }
+    long loaded = System.currentTimeMillis();
     scanned.putAll(used);
     writeCache(cacheFile, used);
 
-    Summaries s = new Summaries(byName.values(), tests, new Hierarchy(byName, List.copyOf(libraries)), LibraryModels.load(models), thresholds,
+    // test classes (parity mode) are added by extend(), like those of later modules
+    Summaries s = new Summaries(byName.values(), List.of(), new Hierarchy(byName, List.copyOf(libraries)), LibraryModels.load(models), thresholds,
       new Summaries.Options(new Summaries.Nullable(config.getStringArray(DeepJavaPlugin.NULLABLE_ANNOTATIONS).length == 0
         ? Summaries.Nullable.DEFAULT.annotations() : Set.of(config.getStringArray(DeepJavaPlugin.NULLABLE_ANNOTATIONS)),
         Set.of(config.getStringArray(DeepJavaPlugin.NULLABLE_IGNORED))),
         config.getBoolean(DeepJavaPlugin.DATA_SOURCES).orElse(true), config.getBoolean(DeepJavaPlugin.LOG_PARAMETERS_SAFE).orElse(true),
         config.getBoolean(DeepJavaPlugin.REFERENCE_PARITY).orElse(false)));
-    LOG.info("Deep Java pre-pass: {} classes ({} from cache) from {} directories/jars in {} ms",
-      byName.size(), hits[0], binaries.size(), System.currentTimeMillis() - start);
+    LOG.info("Deep Java pre-pass: computed (key {}), {} classes ({} from cache) from {} directories/jars, {} libraries; "
+      + "class facts {} ms, summaries {} ms", key == null ? "cache off" : key, byName.size(), hits[0], binaries.size(), libraries.size(),
+      loaded - start, System.currentTimeMillis() - loaded);
     return s;
   }
 

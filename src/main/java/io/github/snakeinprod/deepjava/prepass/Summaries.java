@@ -219,6 +219,35 @@ public final class Summaries {
     return classes;
   }
 
+  private final Set<Object> statsSources = new java.util.HashSet<>();
+
+  /**
+   * Calls in classes that count for call-site statistics only (test code of a module analysed later).
+   *
+   * @param source identifies the classes (a directory), so each is added once
+   */
+  public synchronized boolean addStats(Object source, Collection<ClassFacts> statsOnly) {
+    if (!statsSources.add(source)) {
+      return false;
+    }
+    for (ClassFacts c : statsOnly) {
+      for (MethodFacts m : c.methods().values()) {
+        m.uses().callSites().forEach((k, n) -> callSites.merge(k, n, Integer::sum));
+        m.uses().nullChecks().forEach((k, n) -> nullChecks.merge(k, n, Integer::sum));
+      }
+    }
+    return true;
+  }
+
+  public synchronized boolean hasStats(Object source) {
+    return statsSources.contains(source);
+  }
+
+  /** Library answers computed before more libraries were added are recomputed on demand. */
+  public synchronized void forgetLibraryAnswers() {
+    memo.clear();
+  }
+
   public Hierarchy hierarchy() {
     return hierarchy;
   }
@@ -244,8 +273,12 @@ public final class Summaries {
   /** Findings of {@code rule} in {@code sourcePath} (e.g. {@code com/acme/Foo.java}). */
   public synchronized List<Finding> findings(String rule, String sourcePath) {
     if (findings == null) {
+      long start = System.currentTimeMillis();
       findings = new HashMap<>();
-      for (Finding f : new ProjectAnalyses(this).run()) {
+      List<Finding> all = new ProjectAnalyses(this).run();
+      org.slf4j.LoggerFactory.getLogger(Summaries.class).info("Deep Java whole-program analyses (taint, locks, exceptions): {} findings in {} ms",
+        all.size(), System.currentTimeMillis() - start);
+      for (Finding f : all) {
         findings.computeIfAbsent(f.rule(), k -> new HashMap<>()).computeIfAbsent(f.sourcePath(), k -> new ArrayList<>()).add(f);
       }
     }

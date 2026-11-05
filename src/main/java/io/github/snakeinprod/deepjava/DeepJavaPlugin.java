@@ -17,6 +17,7 @@ public class DeepJavaPlugin implements Plugin {
   public static final String DATA_SOURCES = "sonar.deepjava.taint.dataSources";
   public static final String LOG_PARAMETERS_SAFE = "sonar.deepjava.taint.logParametersSafe";
   public static final String REFERENCE_PARITY = "sonar.deepjava.referenceParity";
+  public static final String PREPASS_CACHE = "sonar.deepjava.prepassCache";
 
   @Override
   public void define(Context context) {
@@ -41,7 +42,10 @@ public class DeepJavaPlugin implements Plugin {
         + "set to false if the log layout does not encode CR/LF.", "true").type(org.sonar.api.PropertyType.BOOLEAN).build(),
       prop(REFERENCE_PARITY, "Reference parity", "Also report what whole-program reference analyzers report where this plugin "
         + "deliberately stays quiet: Objects.requireNonNull on nullable values, unreachable code in Lombok-generated members, "
-        + "statistical null checks of getters.", "false").type(org.sonar.api.PropertyType.BOOLEAN).build());
+        + "statistical null checks of getters.", "false").type(org.sonar.api.PropertyType.BOOLEAN).build(),
+      prop(PREPASS_CACHE, "Reuse the pre-pass across modules", "Compute the whole-program pre-pass once per scanner run and reuse it "
+        + "in every module with the same compiled classes; false recomputes it whenever a module adds classes, libraries or tests.",
+        "true").type(org.sonar.api.PropertyType.BOOLEAN).build());
   }
 
   private static PropertyDefinition.Builder prop(String key, String name, String description, String defaultValue) {
