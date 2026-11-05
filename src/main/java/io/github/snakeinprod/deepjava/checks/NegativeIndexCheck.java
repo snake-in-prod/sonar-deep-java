@@ -56,6 +56,8 @@ public class NegativeIndexCheck extends DeepCheck {
       IdentifierTree first = usages.get(0);
       if (isIndexUse(first, first.parent())) {
         reportIssue(first, message);
+      } else if (passedAsIndex(first, first.parent())) {
+        reportIssue(first, "\"" + search + "\" returns -1 when nothing is found, and the called method uses this value as an index.");
       }
     }
   }

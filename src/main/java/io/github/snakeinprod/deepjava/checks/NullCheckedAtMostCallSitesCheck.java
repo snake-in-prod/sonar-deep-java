@@ -45,7 +45,10 @@ public class NullCheckedAtMostCallSitesCheck extends DeepCheck {
     Tree parent = NullReturnDereferenceCheck.skipParentheses(mit);
     // a Lombok getter has no type in the syntax tree: its descriptor says whether it returns a wrapper (unboxing)
     boolean boxed = Derefs.isBoxed(mit.symbolType()) || key.matches(".*\\)Ljava/lang/(Long|Integer|Short|Byte|Boolean|Double|Float|Character);");
-    if (Derefs.isDereference(parent, mit, boxed)) {
+    // parity: requireNonNull(f(x)) and f(x) passed to a parameter the callee dereferences count as dereferences
+    boolean argument = parity && !Derefs.isDereference(parent, mit, boxed) && !NullReturnDereferenceCheck.isRequireNonNullArgument(parent, mit)
+      && NullArgumentCheck.passedToDereferencingParameter(s, mit, parent);
+    if (argument || Derefs.isDereference(parent, mit, boxed) || parity && NullReturnDereferenceCheck.isRequireNonNullArgument(parent, mit)) {
       site = Trees.methodName(mit);
     } else if (parent instanceof VariableTree v && Trees.isLocal(v.symbol())) {
       site = NullReturnDereferenceCheck.firstUseIfDereference(v.symbol(), parity);
@@ -53,20 +56,29 @@ public class NullCheckedAtMostCallSitesCheck extends DeepCheck {
     if (site == null) {
       return;
     }
-    Summaries.CallStats stats = s.callStats(key);
     // parity: the reference analyzer reports at lower ratios; getters get no stricter cut-off
     double ratio = parity ? PARITY_RATIO : isPlainGetter(s, key) ? Math.max(GETTER_RATIO, s.thresholds().minRatio()) : s.thresholds().minRatio();
     int minSites = parity ? Math.min(PARITY_MIN_SITES, s.thresholds().minSites()) : s.thresholds().minSites();
-    if (stats.sites() < minSites || stats.checked() < ratio * stats.sites() || stats.checked() >= stats.sites()) {
-      return;
+    // main code alone first (what the reference counts), then with the test callers parity mode adds
+    Summaries.CallStats stats = s.callStats(key, false);
+    if (!qualifies(stats, ratio, minSites)) {
+      stats = s.callStats(key, true);
+      if (!qualifies(stats, ratio, minSites)) {
+        return;
+      }
     }
     // NullReturnDereference already reports the calls whose null it can explain
-    if (NullReturnDereferenceCheck.reportableReason(mit, s, key).isPresent() || NullReturnDereferenceCheck.isNullCheckedElsewhere(mit)) {
+    // (an argument it does not report: that is NullPassedToDereferencedParameter's, a different reference class)
+    if (!argument && NullReturnDereferenceCheck.reportableReason(mit, s, key).isPresent() || NullReturnDereferenceCheck.isNullCheckedElsewhere(mit)) {
       return;
     }
     Summaries.Call c = Summaries.parse(key);
     reportIssue(site, "The result of \"" + Summaries.display(c.owner(), c.name()) + "\" is null-checked at " + stats.checked() + " of "
       + stats.sites() + " call sites, but dereferenced here without a check.");
+  }
+
+  private static boolean qualifies(Summaries.CallStats stats, double ratio, int minSites) {
+    return stats.sites() >= minSites && stats.checked() >= ratio * stats.sites() && stats.checked() < stats.sites();
   }
 
   /** {@code getX()}/{@code isX()} that returns a field as is. */

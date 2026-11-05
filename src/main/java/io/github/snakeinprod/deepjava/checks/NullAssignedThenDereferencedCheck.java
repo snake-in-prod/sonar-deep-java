@@ -155,6 +155,14 @@ public class NullAssignedThenDereferencedCheck extends DeepCheck {
         return true;
       }
       for (Tree t : Trees.collect(later, Tree.class)) {
+        // parity: passed on to a parameter that the callee dereferences
+        if (summaries.get().options().referenceParity() && t instanceof org.sonar.plugins.java.api.tree.IdentifierTree id
+          && var.equals(id.symbol()) && !Trees.assigns(later, var) && NullArgumentCheck.passedToDereferencingParameter(summaries.get(), id, id.parent())) {
+          if (reported.add(t)) {
+            reportIssue(t, "\"" + var.name() + "\" is set to null at line " + line + " on some path and passed here to a method that dereferences it.");
+          }
+          return true;
+        }
         ExpressionTree derefd = t instanceof MemberSelectExpressionTree ms ? ms.expression()
           : t instanceof ArrayAccessExpressionTree aa ? aa.expression() : null;
         if (derefd != null && var.equals(Trees.symbol(derefd)) && Trees.skip(derefd) == derefd && !Trees.assigns(later, var)

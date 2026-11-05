@@ -145,6 +145,9 @@ public final class Summaries {
   private final Map<String, Optional<NullReason>> memo = new HashMap<>();
   private final Map<String, Integer> callSites = new HashMap<>();
   private final Map<String, Integer> nullChecks = new HashMap<>();
+  /** Call sites in test code (parity only): counted on top of the main-code ones. */
+  private final Map<String, Integer> testSites = new HashMap<>();
+  private final Map<String, Integer> testChecks = new HashMap<>();
   private Map<String, Map<String, List<Finding>>> findings;
 
   /**
@@ -185,12 +188,7 @@ public final class Summaries {
   /** @param statsOnly classes (test code) whose calls count for call-site statistics only */
   public Summaries(Collection<ClassFacts> facts, Collection<ClassFacts> statsOnly, Hierarchy hierarchy, LibraryModels models,
     Thresholds thresholds, Options options) {
-    for (ClassFacts c : statsOnly) {
-      for (MethodFacts m : c.methods().values()) {
-        m.uses().callSites().forEach((k, n) -> callSites.merge(k, n, Integer::sum));
-        m.uses().nullChecks().forEach((k, n) -> nullChecks.merge(k, n, Integer::sum));
-      }
-    }
+    countTests(statsOnly);
     this.options = options;
     this.nullable = options.nullable();
     this.classes = byName(facts);
@@ -230,13 +228,17 @@ public final class Summaries {
     if (!statsSources.add(source)) {
       return false;
     }
+    countTests(statsOnly);
+    return true;
+  }
+
+  private void countTests(Collection<ClassFacts> statsOnly) {
     for (ClassFacts c : statsOnly) {
       for (MethodFacts m : c.methods().values()) {
-        m.uses().callSites().forEach((k, n) -> callSites.merge(k, n, Integer::sum));
-        m.uses().nullChecks().forEach((k, n) -> nullChecks.merge(k, n, Integer::sum));
+        m.uses().callSites().forEach((k, n) -> testSites.merge(k, n, Integer::sum));
+        m.uses().nullChecks().forEach((k, n) -> testChecks.merge(k, n, Integer::sum));
       }
     }
-    return true;
   }
 
   public synchronized boolean hasStats(Object source) {
@@ -475,13 +477,22 @@ public final class Summaries {
 
   // ---------------------------------------------------------------- nullness
 
+  /** Call sites in main and test code (test code is only read in parity mode). */
   public CallStats callStats(String callKey) {
+    return callStats(callKey, true);
+  }
+
+  /**
+   * @param withTests count test callers too; without them the population is the one the reference analyzer sees,
+   *                  which tests that dereference results directly cannot dilute
+   */
+  public synchronized CallStats callStats(String callKey, boolean withTests) {
     String k = BytecodeScanner.statKey(callKey);
     int sites = 0;
     int checked = 0;
     for (String copy : copies(k)) {
-      sites += callSites.getOrDefault(copy, 0);
-      checked += nullChecks.getOrDefault(copy, 0);
+      sites += callSites.getOrDefault(copy, 0) + (withTests ? testSites.getOrDefault(copy, 0) : 0);
+      checked += nullChecks.getOrDefault(copy, 0) + (withTests ? testChecks.getOrDefault(copy, 0) : 0);
     }
     return new CallStats(sites, checked);
   }
@@ -546,6 +557,10 @@ public final class Summaries {
         return null;
       }
       return new NullReason(display(c.owner(), c.name()), null, null, NullReason.Kind.LIBRARY, lib.guards());
+    }
+    // parity: null for a null argument counts as nullable, as for the reference analyzer
+    if (options.referenceParity() && models.nullForNullArgument(c.owner(), c.name())) {
+      return new NullReason(display(c.owner(), c.name()), null, null, NullReason.Kind.LIBRARY, Set.of());
     }
     List<ClassFacts> targets = targetClasses(c.owner(), c.nameDesc(), c.exact());
     if (targets.size() > thresholds.maxTargets()) {

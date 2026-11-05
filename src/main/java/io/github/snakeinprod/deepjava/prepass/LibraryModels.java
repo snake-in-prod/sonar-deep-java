@@ -36,6 +36,7 @@ public final class LibraryModels {
   private final Map<String, String> uncheckedThrows = new HashMap<>();
   private final Set<String> resourceFactories = new HashSet<>();
   private final Map<String, Set<Integer>> dereferencedParameters = new HashMap<>();
+  private final Set<String> nullForNullArgument = new HashSet<>();
 
   /** A matched model entry. */
   public record Match(String entry, Set<String> guards) {
@@ -47,6 +48,7 @@ public final class LibraryModels {
     Map<String, String> uncheckedThrows = Map.of();
     List<String> resourceFactories = List.of();
     Map<String, List<Integer>> dereferencedParameters = Map.of();
+    List<String> nullForNullArgument = List.of();
   }
 
   public static LibraryModels load(List<Path> userFiles) throws IOException {
@@ -72,6 +74,9 @@ public final class LibraryModels {
           nullableReturns.add(e);
         }
       }
+    }
+    if (json.nullForNullArgument != null) {
+      nullForNullArgument.addAll(json.nullForNullArgument);
     }
     if (json.guards != null) {
       json.guards.forEach((k, v) -> guards.computeIfAbsent(k, x -> new HashSet<>()).addAll(v));
@@ -117,6 +122,11 @@ public final class LibraryModels {
   }
 
   /** Looks up {@code owner#name desc} on the owner and its supertypes. */
+  /** {@code owner#name}: returns null exactly when its argument is null ({@code SerializationUtils.clone}). */
+  public boolean nullForNullArgument(String owner, String name) {
+    return nullForNullArgument.contains(owner + "#" + name);
+  }
+
   public Match nullableReturn(String owner, String name, String desc, Hierarchy hierarchy) {
     for (String type : hierarchy.selfAndSupertypes(owner)) {
       String byName = type + "#" + name;

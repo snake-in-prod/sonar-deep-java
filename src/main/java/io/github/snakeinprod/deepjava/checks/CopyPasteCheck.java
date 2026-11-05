@@ -141,7 +141,8 @@ public class CopyPasteCheck extends DeepCheck {
           continue;
         }
         for (int k = 0; k < a.size(); k++) {
-          if (!diff.contains(k) && isName(a.get(k)) && a.get(k).toLowerCase().contains(from.toLowerCase())) {
+          if (!diff.contains(k) && isName(a.get(k)) && a.get(k).toLowerCase().contains(from.toLowerCase())
+            && !usedTogetherElsewhere(body, i, b.get(d), a.get(k))) {
             reportIssue(body.get(i), "This line renames \"" + a.get(d) + "\" to \"" + b.get(d) + "\" but still uses \"" + a.get(k)
               + "\": is it a copy of the line above that was not fully edited?");
             return;
@@ -149,6 +150,30 @@ public class CopyPasteCheck extends DeepCheck {
         }
       }
     }
+  }
+
+  /**
+   * Another statement of the block (not the pair itself) uses the new name and the kept one in the same order: the
+   * combination is deliberate.
+   */
+  private boolean usedTogetherElsewhere(List<StatementTree> body, int i, String renamed, String kept) {
+    for (int j = 0; j < body.size(); j++) {
+      if (j == i || j == i - 1) {
+        continue;
+      }
+      String t = text(body.get(j));
+      if (t.length() > MAX_TEXT) {
+        continue;
+      }
+      List<String> tokens = tokens(t);
+      int r = tokens.indexOf(renamed);
+      int k = tokens.indexOf(kept);
+      if (r >= 0 && k >= 0 && Integer.compare(r, k) == Integer.compare(tokens(text(body.get(i))).indexOf(renamed),
+        tokens(text(body.get(i))).indexOf(kept))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Longer statements are data (an embedded document, a generated table), never a renamed copy. */
@@ -227,20 +252,33 @@ public class CopyPasteCheck extends DeepCheck {
     for (int i = 1; i < copies.size(); i++) {
       Copy ref = copies.get(i - 1);
       Copy c = copies.get(i);
+      int at = i;
       if (ref != null && c != null && ref.prop().equals(ref.srcProp()) && ref.source().equals(c.source())
-        && c.srcProp().equals(ref.srcProp()) && !c.prop().equals(c.srcProp())) {
+        && c.srcProp().equals(ref.srcProp()) && !c.prop().equals(c.srcProp()) && !repeated(copies, i, (j, x) -> x.prop().equals(c.prop())
+          && x.srcProp().equals(c.srcProp()))) {
         reportIssue(c.value(), "Value \"" + ref.srcProp() + "\" is copied into \"" + c.prop()
           + "\" as in the line above; it might be \"" + c.prop() + "\".");
       }
       Copy next = i + 1 < copies.size() ? copies.get(i + 1) : null;
       if (ref != null && c != null && next != null && c.target() != null && c.target().equals(ref.target()) && c.target().equals(next.target())
         && ref.source().equals(next.source()) && !c.source().equals(ref.source()) && c.prop().equals(c.srcProp())
-        && ref.prop().equals(ref.srcProp()) && next.prop().equals(next.srcProp())) {
+        && ref.prop().equals(ref.srcProp()) && next.prop().equals(next.srcProp())
+        && !repeated(copies, i, (j, x) -> Math.abs(j - at) > 1 && x.source().equals(c.source()) && c.target().equals(x.target()))) {
         reportIssue(c.value(), "\"" + c.prop() + "\" is read from \"" + c.source().name() + "\" while the lines around it read from \""
           + ref.source().name() + "\"; is it copied from the wrong object?");
       }
     }
     pairs(tree);
+  }
+
+  /** Another copy of the block (not number {@code i}) plays the same roles: the mapping is deliberate. */
+  private static boolean repeated(List<Copy> copies, int i, java.util.function.BiPredicate<Integer, Copy> sameRoles) {
+    for (int j = 0; j < copies.size(); j++) {
+      if (j != i && copies.get(j) != null && sameRoles.test(j, copies.get(j))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** {@code x.setFirst(a.getFirst())} or {@code builder.first(a.getFirst())} as (first, a, first). */

@@ -470,6 +470,8 @@ final class ProjectAnalyses implements Opcodes {
   // ------------------------------------------------------------------ 7a unchecked exceptions in entry points
 
   private final Map<Method, Map<String, String>> escaping = new HashMap<>();
+  /** Per method, the line of its own call through which each escaping exception leaves it. */
+  private final Map<Method, Map<String, Integer>> escapingAt = new HashMap<>();
 
   private boolean caught(Set<String> handlers, String type) {
     if (handlers.isEmpty()) {
@@ -487,6 +489,7 @@ final class ProjectAnalyses implements Opcodes {
     }
     escaping.put(m, Map.of());
     Map<String, String> out = new LinkedHashMap<>();
+    Map<String, Integer> at = new HashMap<>();
     for (CallSite cs : m.facts().ex().calls()) {
       if (isLambdaRef(cs)) {
         continue;
@@ -500,6 +503,7 @@ final class ProjectAnalyses implements Opcodes {
       }
       if (ex != null && !caught(cs.caught(), ex)) {
         out.putIfAbsent(ex, "\"" + Summaries.display(c.owner(), c.name()) + "\" at " + m.location(cs.line()));
+        at.putIfAbsent(ex, cs.line());
       }
       boolean parity = s.options().referenceParity();
       if (depth < (parity ? 10 : 6)) {
@@ -509,6 +513,7 @@ final class ProjectAnalyses implements Opcodes {
             escaping(tm, depth + 1).forEach((e, how) -> {
               if (!caught(cs.caught(), e)) {
                 out.putIfAbsent(e, how);
+                at.putIfAbsent(e, cs.line());
               }
             });
           }
@@ -516,6 +521,7 @@ final class ProjectAnalyses implements Opcodes {
       }
     }
     escaping.put(m, Map.copyOf(out));
+    escapingAt.put(m, at);
     return escaping.get(m);
   }
 
@@ -543,7 +549,10 @@ final class ProjectAnalyses implements Opcodes {
       if (!ex.isEmpty()) {
         Map.Entry<String, String> first = ex.entrySet().iterator().next();
         String what = m.name().equals("main") ? "the program stops" : "the thread or task stops and the work is lost";
-        add(UNCHECKED_ENTRY, m.owner(), m.facts().info().firstLine(), "\"" + Summaries.simpleName(first.getKey()) + "\" from "
+        // parity: on the call the exception escapes through, as the reference analyzer reports it
+        int line = s.options().referenceParity() ? escapingAt.getOrDefault(m, Map.of()).getOrDefault(first.getKey(), m.facts().info().firstLine())
+          : m.facts().info().firstLine();
+        add(UNCHECKED_ENTRY, m.owner(), line, "\"" + Summaries.simpleName(first.getKey()) + "\" from "
           + first.getValue() + " can escape \"" + m.display() + "\": " + what + ". Catch it.");
       }
     }

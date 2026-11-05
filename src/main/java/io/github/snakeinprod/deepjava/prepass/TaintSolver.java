@@ -78,6 +78,10 @@ final class TaintSolver {
     sizeCalls.forEach((helper, calls) -> {
       if (calls.size() <= MAX_SIZE_CALLERS) {
         calls.forEach(o -> report((Sink) o[0], (ClassFacts) o[1], (Set<String>) o[2], (String) o[3]));
+        if (s.options().referenceParity()) {
+          // parity: also where the helper uses the size (index, loop bound), as the reference analyzer reports it
+          calls.forEach(o -> report((Sink) o[4], (ClassFacts) o[5], (Set<String>) o[2], (String) o[3]));
+        }
       } else {
         Set<String> all = new HashSet<>();
         calls.forEach(o -> all.addAll((Set<String>) o[2]));

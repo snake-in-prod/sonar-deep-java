@@ -76,6 +76,11 @@
     "reactor/core/publisher/Flux#blockFirst",
     "reactor/core/publisher/Flux#blockLast"
       ],
+  "nullForNullArgument": [
+    "org/apache/commons/lang3/SerializationUtils#clone",
+    "org/apache/commons/lang/SerializationUtils#clone",
+    "org/springframework/util/SerializationUtils#clone"
+  ],
   "guards": {
     "java/util/Map#get": [
       "containsKey",

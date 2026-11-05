@@ -73,6 +73,37 @@ public class NullArgumentCheck extends DeepCheck {
     }
   }
 
+  /**
+   * {@code value} is an argument that the called method dereferences (on some path, never comparing it to null), or a
+   * library method modelled as dereferencing it.
+   */
+  static boolean passedToDereferencingParameter(Summaries s, ExpressionTree value, Tree parent) {
+    if (parent == null || !parent.is(Tree.Kind.ARGUMENTS)) {
+      return false;
+    }
+    String key;
+    List<? extends ExpressionTree> args;
+    if (parent.parent() instanceof MethodInvocationTree call) {
+      key = Trees.resolveCallKey(call, s);
+      args = call.arguments();
+    } else if (parent.parent() instanceof org.sonar.plugins.java.api.tree.NewClassTree nc && !nc.methodSymbol().isUnknown()) {
+      key = Trees.callKey(nc.methodSymbol());
+      args = nc.arguments();
+    } else {
+      return false;
+    }
+    int index = args.indexOf(value);
+    if (key == null || index < 0) {
+      return false;
+    }
+    List<Summaries.Method> targets = s.targets(key);
+    if (targets.isEmpty()) {
+      Summaries.Call c = Summaries.parse(key);
+      return s.models().dereferencesParameter(c.owner(), c.name(), c.desc(), index, s.hierarchy());
+    }
+    return targets.size() <= s.thresholds().maxTargets() && targets.stream().allMatch(t -> s.maybeDereferences(t, index));
+  }
+
   /** Library methods modelled as dereferencing a parameter ({@code new StringReader(x)}, {@code DocumentBuilder.parse(x)}). */
   private void library(Summaries s, String key, List<? extends ExpressionTree> args) {
     Summaries.Call c = Summaries.parse(key);

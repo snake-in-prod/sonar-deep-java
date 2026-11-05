@@ -1147,10 +1147,13 @@ public final class BytecodeScanner implements Opcodes {
       if (insn instanceof MethodInsnNode mi) {
         int argc = Type.getArgumentTypes(mi.desc).length;
         boolean hasReceiver = op != INVOKESTATIC;
-        if (NULL_TESTS.contains(mi.owner + "#" + mi.name)) {
+        // requireNonNull asserts rather than tests: for the statistics it is an unchecked dereference, as for the reference
+        if (NULL_TESTS.contains(mi.owner + "#" + mi.name) && !"requireNonNull".equals(mi.name)) {
           for (int a = 0; a < argc; a++) {
             recordNullCheck(f.getStack(sp - 1 - a), i);
           }
+        }
+        if (NULL_TESTS.contains(mi.owner + "#" + mi.name)) {
           if (mi.name.equals("requireNonNull") && argc >= 1) {
             derefs.add(f.getStack(sp - argc).local());
           }

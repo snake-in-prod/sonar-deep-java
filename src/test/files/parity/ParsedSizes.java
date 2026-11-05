@@ -41,7 +41,7 @@ class Limits {
   }
 
   void purge(long period) {
-    for (long t = 0; t < period; t++) {
+    for (long t = 0; t < period; t++) { // Noncompliant
       System.out.println(t);
     }
   }

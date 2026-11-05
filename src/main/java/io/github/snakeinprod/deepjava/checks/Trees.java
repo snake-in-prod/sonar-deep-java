@@ -188,6 +188,11 @@ final class Trees {
         if (type.isInstance(tree)) {
           out.add(type.cast(tree));
         }
+        if (tree instanceof org.sonar.plugins.java.api.tree.Arguments args) {
+          // the arguments' own accept() visits them directly, bypassing scan()
+          args.forEach(this::scan);
+          return;
+        }
         super.scan(tree);
       }
 
