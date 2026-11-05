@@ -13,4 +13,21 @@ class RepositoryFindersTest {
     v.getVersion().length();
     v.getVersion().length();
   }
+
+  void settings(Settings s) {
+    for (String k : new String[] {"a", "b", "c", "d"}) {
+      if (s.lookup(k) != null && s.section(k) != null) {
+        System.out.println(k);
+      }
+    }
+  }
+
+  void more(Settings s) {
+    assert s.lookup("x") != null;
+    assert s.lookup("y") != null;
+    assert s.lookup("z") != null;
+    assert s.section("x") != null;
+    assert s.section("y") != null;
+    assert s.section("z") != null;
+  }
 }

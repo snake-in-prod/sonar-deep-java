@@ -106,6 +106,8 @@ public final class TaintScanner implements Opcodes {
     private final List<TryCatchBlockNode>[] handlers;
     private final Deque<Integer> work = new ArrayDeque<>();
     private final Set<Integer> counters = new HashSet<>();
+    /** Conditional jumps that test a loop condition (backward, or forward to just past the loop's back jump). */
+    private final Set<Integer> loopConditions = new HashSet<>();
     private final Interp interp = new Interp();
     private final Map<Integer, Sink> sinks = new HashMap<>();
     private final Map<Integer, Edge> edges = new HashMap<>();
@@ -146,6 +148,14 @@ public final class TaintScanner implements Opcodes {
           if (op != null && Set.of(IADD, ISUB, LADD, LSUB).contains(op.getOpcode()) && c != null
             && (c.getOpcode() >= ICONST_M1 && c.getOpcode() <= LDC) && ld instanceof VarInsnNode l && l.var == st.var) {
             counters.add(st.var);
+          }
+        }
+      }
+      for (int i = 0; i < n; i++) {
+        if (insns.get(i) instanceof JumpInsnNode j && j.getOpcode() != GOTO && j.getOpcode() != JSR) {
+          int t = insns.indexOf(j.label);
+          if (t <= i || realBefore(j.label) instanceof JumpInsnNode g && g.getOpcode() == GOTO && insns.indexOf(g.label) <= i) {
+            loopConditions.add(i);
           }
         }
       }
@@ -343,6 +353,11 @@ public final class TaintScanner implements Opcodes {
       return null;
     }
 
+    /** A check in a loop condition bounds the loop ({@code while (n-- > 0)}, {@code for (i = n; i > 0; i--)}). */
+    private String comparison() {
+      return loopConditions.contains(current) ? "loop bound comparison" : "comparison";
+    }
+
     private void sink(String kind, Set<String> labels, String api) {
       labels = unkeyed(labels);
       if (!labels.isEmpty()) {
@@ -443,6 +458,9 @@ public final class TaintScanner implements Opcodes {
             return new TV(r.getSize(), numeric(v.labels()), -1, null);
           case CHECKCAST:
             return v;
+          case IINC:
+            // --n of an untrusted n is still untrusted (do { } while (--n > 0))
+            return new TV(1, numeric(v.labels()), -1, null);
           case INSTANCEOF:
             return TV.C1;
           default:
@@ -774,7 +792,7 @@ public final class TaintScanner implements Opcodes {
             next = bound(next, b, a, relational);
           } else if (relational && !f.getStack(sp - 1).labels().isEmpty()) {
             // if (n < 0): a check against zero
-            sink("SIZECMP", f.getStack(sp - 1).labels(), "comparison");
+            sink("SIZECMP", f.getStack(sp - 1).labels(), comparison());
           }
         }
         Boolean taken = constantJump(op, f, sp);
@@ -854,7 +872,7 @@ public final class TaintScanner implements Opcodes {
       Integer c = intConst(other);
       if (relational && (c != null || !other.labels().isEmpty())) {
         // value > 255: a bound check on untrusted input (parity mode reports it as a size use)
-        sink("SIZECMP", x.labels(), "comparison");
+        sink("SIZECMP", x.labels(), comparison());
       }
       if (!other.labels().isEmpty() || c != null && c <= 1) {
         return f;

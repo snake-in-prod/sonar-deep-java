@@ -92,6 +92,16 @@ class ParityTest {
   }
 
   @Test
+  void annotated_library_nullables_and_their_wrappers() throws Exception {
+    verify("src/test/files/parity/AnnotatedLibraries.java", s -> new NullableDereferenceCheck(() -> s));
+  }
+
+  @Test
+  void loop_conditions_are_loop_bounds() throws Exception {
+    verify("src/test/files/parity/LoopBounds.java", s -> (JavaFileScanner) TaintChecks.create("TaintedLoopBound", () -> s));
+  }
+
+  @Test
   void copy_paste_roles_repeated_in_the_block() throws Exception {
     verify("src/test/files/parity/CopyPasteRoles.java", s -> new CopyPasteCheck(() -> s));
   }

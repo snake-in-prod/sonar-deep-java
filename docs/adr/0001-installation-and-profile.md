@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-11-04
-- Applies to: SonarQube Community Build 26.7 and later (tested on 26.7 and 26.10), Deep Java 0.6.3
+- Applies to: SonarQube Community Build 26.7 and later (tested on 26.7 and 26.10), Deep Java 0.6.4
 
 This record is written to be executed step by step, for example by an AI agent operating the SonarQube server.
 Every command below was run against a SonarQube 26.7 container before this record was written.
@@ -41,7 +41,7 @@ Variables used below (set them first):
 ```sh
 SONAR_URL=http://localhost:9000          # server URL
 SONAR_ADMIN=admin:<password>             # an administrator login, or "<token>:" for a user token
-VERSION=0.6.3
+VERSION=0.6.4
 ```
 
 ### 1. Install the plugin

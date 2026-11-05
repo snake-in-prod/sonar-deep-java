@@ -59,11 +59,15 @@ public class NullCheckedAtMostCallSitesCheck extends DeepCheck {
     // parity: the reference analyzer reports at lower ratios; getters get no stricter cut-off
     double ratio = parity ? PARITY_RATIO : isPlainGetter(s, key) ? Math.max(GETTER_RATIO, s.thresholds().minRatio()) : s.thresholds().minRatio();
     int minSites = parity ? Math.min(PARITY_MIN_SITES, s.thresholds().minSites()) : s.thresholds().minSites();
-    // main code alone first (what the reference counts), then with the test callers parity mode adds
-    Summaries.CallStats stats = s.callStats(key, false);
+    // main code alone first (what the reference counts), then with the test callers parity mode adds, but only when
+    // main code has enough call sites of its own: test-dominated statistics (assertNotNull) make most extra issues
+    Summaries.CallStats main = s.callStats(key, false);
+    Summaries.CallStats stats = main;
+    String scope = parity ? " in main code" : "";
     if (!qualifies(stats, ratio, minSites)) {
       stats = s.callStats(key, true);
-      if (!qualifies(stats, ratio, minSites)) {
+      scope = " counting tests";
+      if (main.sites() < minSites || !qualifies(stats, ratio, minSites)) {
         return;
       }
     }
@@ -74,7 +78,7 @@ public class NullCheckedAtMostCallSitesCheck extends DeepCheck {
     }
     Summaries.Call c = Summaries.parse(key);
     reportIssue(site, "The result of \"" + Summaries.display(c.owner(), c.name()) + "\" is null-checked at " + stats.checked() + " of "
-      + stats.sites() + " call sites, but dereferenced here without a check.");
+      + stats.sites() + " call sites" + scope + ", but dereferenced here without a check.");
   }
 
   private static boolean qualifies(Summaries.CallStats stats, double ratio, int minSites) {

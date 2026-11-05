@@ -37,6 +37,7 @@ public final class LibraryModels {
   private final Set<String> resourceFactories = new HashSet<>();
   private final Map<String, Set<Integer>> dereferencedParameters = new HashMap<>();
   private final Set<String> nullForNullArgument = new HashSet<>();
+  private final List<java.util.regex.Pattern> annotatedPatterns = new java.util.ArrayList<>();
 
   /** A matched model entry. */
   public record Match(String entry, Set<String> guards) {
@@ -49,6 +50,7 @@ public final class LibraryModels {
     List<String> resourceFactories = List.of();
     Map<String, List<Integer>> dereferencedParameters = Map.of();
     List<String> nullForNullArgument = List.of();
+    List<String> annotatedNullable = List.of();
   }
 
   public static LibraryModels load(List<Path> userFiles) throws IOException {
@@ -77,6 +79,9 @@ public final class LibraryModels {
     }
     if (json.nullForNullArgument != null) {
       nullForNullArgument.addAll(json.nullForNullArgument);
+    }
+    if (json.annotatedNullable != null) {
+      json.annotatedNullable.forEach(e -> annotatedPatterns.add(glob(e)));
     }
     if (json.guards != null) {
       json.guards.forEach((k, v) -> guards.computeIfAbsent(k, x -> new HashSet<>()).addAll(v));
@@ -121,12 +126,17 @@ public final class LibraryModels {
     return false;
   }
 
-  /** Looks up {@code owner#name desc} on the owner and its supertypes. */
+  /** The matched model entry ({@link Match#entry()}) is a method annotated nullable in the library itself. */
+  public boolean annotatedNullable(String entry) {
+    return annotatedPatterns.stream().anyMatch(p -> p.matcher(entry).matches());
+  }
+
   /** {@code owner#name}: returns null exactly when its argument is null ({@code SerializationUtils.clone}). */
   public boolean nullForNullArgument(String owner, String name) {
     return nullForNullArgument.contains(owner + "#" + name);
   }
 
+  /** Looks up {@code owner#name desc} on the owner and its supertypes. */
   public Match nullableReturn(String owner, String name, String desc, Hierarchy hierarchy) {
     for (String type : hierarchy.selfAndSupertypes(owner)) {
       String byName = type + "#" + name;

@@ -23,12 +23,9 @@ class Waiter {
     return f.get(5, TimeUnit.SECONDS).trim(); // Noncompliant
   }
 
+  // annotated nullable in the library: NullableDereference in parity mode
   String reactive(Mono<String> m) {
-    return m.block().trim(); // Noncompliant
-  }
-
-  long inLambda(List<Mono<String>> ms) {
-    return ms.stream().map(m -> m.block().trim()).count(); // Noncompliant
+    return m.block().trim();
   }
 
   int copy(ArrayList<String> items) {

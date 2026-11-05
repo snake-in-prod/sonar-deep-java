@@ -556,7 +556,9 @@ public final class Summaries {
         // constant table, or a get(key) wrapper whose caller chooses the key: content is known to the author
         return null;
       }
-      return new NullReason(display(c.owner(), c.name()), null, null, NullReason.Kind.LIBRARY, lib.guards());
+      // parity: a model entry the library itself annotates nullable is a declared nullable, as for the reference analyzer
+      boolean annotated = options.referenceParity() && (models.annotatedNullable(lib.entry()) || libraryAnnotated(c) != null);
+      return new NullReason(display(c.owner(), c.name()), null, null, annotated ? NullReason.Kind.ANNOTATED : NullReason.Kind.LIBRARY, lib.guards());
     }
     // parity: null for a null argument counts as nullable, as for the reference analyzer
     if (options.referenceParity() && models.nullForNullArgument(c.owner(), c.name())) {

@@ -76,6 +76,16 @@
     "reactor/core/publisher/Flux#blockFirst",
     "reactor/core/publisher/Flux#blockLast"
       ],
+  "annotatedNullable": [
+    "org/opensaml/**#*",
+    "net/shibboleth/**#*",
+    "org/springframework/http/HttpEntity#getBody",
+    "org/springframework/web/multipart/MultipartFile#*",
+    "io/kubernetes/client/**#*",
+    "reactor/core/publisher/Mono#block",
+    "reactor/core/publisher/Flux#blockFirst",
+    "reactor/core/publisher/Flux#blockLast"
+  ],
   "nullForNullArgument": [
     "org/apache/commons/lang3/SerializationUtils#clone",
     "org/apache/commons/lang/SerializationUtils#clone",

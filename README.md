@@ -163,6 +163,8 @@ Annotations in the library jars themselves need no model: a method, return type 
 package, and a nullable parameter of a library method that a project method overrides are all read from bytecode.
 `dereferencedParameters` lists library methods and constructors (`<init>`) that throw on a null argument at the
 given positions (`new StringReader(x)`, `DocumentBuilder.parse(x)`): a nullable value passed there is reported.
+`annotatedNullable` (patterns, same syntax) marks `nullableReturns` entries that the library itself annotates
+nullable (`reactor/core/publisher/Mono#block`); in parity mode they and their project wrappers go to `NullableDereference`.
 Sink argument indexes exclude the receiver, which is `-1`; `parameterArgs` are template parameters (log calls).
 Fields annotated with a `fieldSourceAnnotations` entry (Spring `@Value` by default), and every field of a class
 annotated `@ConfigurationProperties`, are sources. Taint source kinds:
