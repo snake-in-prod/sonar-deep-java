@@ -25,6 +25,14 @@ public class ConstantConditionCheck extends DeepCheck {
     super(summaries);
   }
 
+  /**
+   * @param invariant the value does not depend on any input (a char range test, a literal condition); in parity mode
+   *                  these belong to {@code InvariantResult}, the rest (constants from callees and fields) stay here
+   */
+  protected boolean reports(boolean invariant) {
+    return !(invariant && summaries.get().options().referenceParity());
+  }
+
   @Override
   public List<Tree.Kind> nodesToVisit() {
     return List.of(Tree.Kind.IF_STATEMENT, Tree.Kind.WHILE_STATEMENT, Tree.Kind.DO_STATEMENT, Tree.Kind.CONDITIONAL_EXPRESSION,
@@ -63,13 +71,13 @@ public class ConstantConditionCheck extends DeepCheck {
 
   @Override
   public void visitNode(Tree tree) {
-    if (tree instanceof org.sonar.plugins.java.api.tree.ForStatementTree loop) {
+    if (tree instanceof org.sonar.plugins.java.api.tree.ForStatementTree loop && reports(false)) {
       zeroTimes(loop);
     }
     if (tree instanceof BinaryExpressionTree b) {
       // anywhere, not only in conditions: return '\\u0000' <= c && c <= 'z';
       Boolean always = charRange(b);
-      if (always != null) {
+      if (always != null && reports(true)) {
         reportIssue(b, "This comparison is always " + always + ": a char is never below '\\u0000' or above '\\uffff'.");
       }
       return;
@@ -88,8 +96,14 @@ public class ConstantConditionCheck extends DeepCheck {
       return;
     }
     if (Trees.skip(cond).is(Tree.Kind.BOOLEAN_LITERAL) && tree instanceof IfStatementTree) {
+      if (!reports(true)) {
+        return;
+      }
       reportIssue(cond, "This condition is always " + ((org.sonar.plugins.java.api.tree.LiteralTree) Trees.skip(cond)).value()
         + ": the branch is dead code or unconditional.");
+      return;
+    }
+    if (!reports(false)) {
       return;
     }
     boolean negated = false;

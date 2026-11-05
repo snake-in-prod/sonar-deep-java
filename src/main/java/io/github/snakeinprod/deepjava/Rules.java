@@ -74,12 +74,22 @@ public final class Rules {
         + "reported only when most other call sites check the result.",
       "String host(Config c) { return c.props().get(\"host\"); }\nint port(Config c) { return host(c).indexOf(':'); } // Noncompliant",
       NullReturnDereferenceCheck::new),
+    bug(NullableDereferenceCheck.KEY, "Values declared nullable should not be dereferenced", cwe(476),
+      "Reference parity mode only (sonar.deepjava.referenceParity=true): a method, field or parameter annotated nullable, in "
+        + "project, library or generated code, is dereferenced without a check. Outside parity mode NullReturnDereference reports these.",
+      "@Nullable String middleName() { ... }\nint n = person.middleName().length(); // Noncompliant",
+      NullableDereferenceCheck::new),
     bug(NullArgumentCheck.KEY, "Null should not be passed to a parameter that is always dereferenced", cwe(476),
       "<code>null</code> (or a value that can be null) is passed to a method that dereferences that parameter on every path.",
       "void send(Message m) { queue.add(m.id()); }\nsend(null); // Noncompliant", NullArgumentCheck::new),
     bug(DereferenceBeforeNullCheckCheck.KEY, "Values should not be compared to null after they were dereferenced", cwe(476),
       "A variable is dereferenced and compared to <code>null</code> later: either the check is dead or the dereference is the bug.",
       "int n = s.length();\nif (s == null) { return 0; } // Noncompliant", DereferenceBeforeNullCheckCheck::new),
+    bug(DereferenceAfterNullCheckCheck.KEY, "Values compared to null should not be dereferenced on the null path", cwe(476),
+      "Reference parity mode only (sonar.deepjava.referenceParity=true): a value is compared to null and then dereferenced on "
+        + "the branch where it is null.",
+      "if (id == null) {\n  throw new IllegalArgumentException(\"bad id \" + id.trim()); // Noncompliant\n}",
+      DereferenceAfterNullCheckCheck::new),
     bug(NullCheckedAtMostCallSitesCheck.KEY, "Results null-checked at most call sites should be checked here", cwe(476, 252),
       "Callers of the method check its result for null at most call sites (default 80% of at least 5; 90% for plain getters), "
         + "and this one dereferences it without a check.",
@@ -138,6 +148,10 @@ public final class Rules {
     vuln("TaintedSize", "Sizes, indexes and loop bounds should not come from unchecked user input", cwe(129, 789, 400, 606),
       "A number parsed from user input is used as an array index, an allocation size or a loop bound without a range check." + TAINT,
       "int n = Integer.parseInt(request.getParameter(\"n\"));\nbyte[] buf = new byte[n]; // Noncompliant"),
+    vuln("TaintedLoopBound", "Loop bounds should not come from unchecked input", cwe(606, 400),
+      "Reference parity mode only (sonar.deepjava.referenceParity=true): a number from untrusted input bounds a loop without a range "
+        + "check. Outside parity mode TaintedSize reports these." + TAINT,
+      "int n = Integer.parseInt(request.getParameter(\"n\"));\nfor (int i = 0; i < n; i++) { ... } // Noncompliant"),
     vuln("TaintedSecurityDecision", "Security decisions should not rely on cookies or unverified tokens", cwe(565, 345),
       "A cookie value or the claims of a JWT that was decoded without verification decide a security check." + TAINT,
       "DecodedJWT jwt = JWT.decode(token);\nif (jwt.getClaim(\"role\").asString().equals(\"admin\")) { ... } // Noncompliant"),
@@ -216,6 +230,11 @@ public final class Rules {
       "A condition is always true or false because the method it calls always returns the same constant, or because a "
         + "non-final field is only ever set to one value.",
       "static boolean enabled() { return false; }\nif (enabled()) { ... } // Noncompliant", ConstantConditionCheck::new),
+    bug(InvariantResultCheck.KEY, "Comparisons should not have a value that does not depend on their inputs", cwe(570, 571),
+      "Reference parity mode only (sonar.deepjava.referenceParity=true): a char compared with '\\u0000' or '\\uffff', or a "
+        + "literal condition, always has the same value. Outside parity mode ConstantConditionFromCallee reports these.",
+      "boolean ok = '\\u0000' <= c && c <= '~'; // Noncompliant",
+      InvariantResultCheck::new),
     bug(FindingChecks.DeadEnumCase.KEY, "Switch cases should be reachable", cwe(561),
       "A <code>case</code> handles an enum constant that the project never uses anywhere else, so it never matches.",
       "case LEGACY: // Noncompliant: LEGACY is never used\n  migrate();", s -> new FindingChecks.DeadEnumCase(s)),
@@ -229,6 +248,12 @@ public final class Rules {
         + "declared <code>@NonNull</code> with null, so that branch is unreachable. Reported on the annotation line.",
       "@Data // Noncompliant: the generated equals() tests the @NonNull \"name\" for null\nclass User {\n  @NonNull private String name;\n}",
       s -> new FindingChecks.LombokUnreachable(s)),
+    bug(UnreachableCodeCheck.KEY, "Statements should be reachable", cwe(561),
+      "Reference parity mode only (sonar.deepjava.referenceParity=true): no path reaches the statement. Code after a call that "
+        + "always throws, unreachable branches in Lombok-generated members, and the statement after a retry loop with a constant "
+        + "bound whose every attempt returns or, on the last attempt, throws.",
+      "for (int i = 0; i < 3; i++) {\n  try { return call(); } catch (IOException e) { if (i == 2) throw e; }\n}\nreturn null; // Noncompliant",
+      UnreachableCodeCheck::new),
     // 9. smaller rules
     bug(TernaryPrecedenceCheck.KEY, "Ternary operators should be parenthesized when mixed with arithmetic", cwe(783),
       "In <code>x == y ? 1 : 0 + z</code> the <code>+ z</code> belongs to the false branch only, which is rarely intended.",
@@ -274,6 +299,16 @@ public final class Rules {
         + "or <code>Arrays.equals</code>, which return at the first difference: the time taken reveals how much matched. Use "
         + "<code>MessageDigest.isEqual</code>.",
       "if (token.equals(expectedToken)) { ... } // Noncompliant", TimingUnsafeSecretComparisonCheck::new),
+    bug(IdenticalBranchesCheck.KEY, "Branches of an if / else if chain should not be copies with only the condition literal changed",
+      cwe(1041), "Reference parity mode only (sonar.deepjava.referenceParity=true): two branches of the chain have the same body and "
+        + "their conditions differ only in literals; one of them is likely a copy that was not edited.",
+      "if (s.matches(\"[0-9]+\")) { return \"number\"; }\nelse if (s.matches(\"[a-z]+\")) { return \"number\"; } // Noncompliant",
+      IdenticalBranchesCheck::new),
+    bug(ResourceLeakCheck.KEY, "Streams should not leak when a wrapper constructor throws", cwe(772),
+      "Reference parity mode only (sonar.deepjava.referenceParity=true): a stream is created inline as the argument of a wrapper "
+        + "whose constructor can throw (GZIP, object streams); when it throws, nothing closes the inner stream.",
+      "try (InputStream in = new GZIPInputStream(new FileInputStream(f))) { ... } // Noncompliant",
+      ResourceLeakCheck::new),
     bug(CopyPasteCheck.KEY, "Expressions copied from a neighbour should rename every identifier", cwe(),
       "Next to <code>a.x - b.x</code>, the expression <code>a.y - b.x</code> probably meant <code>b.y</code>.",
       "double dx = a.x - b.x;\ndouble dy = a.y - b.x; // Noncompliant", CopyPasteCheck::new));

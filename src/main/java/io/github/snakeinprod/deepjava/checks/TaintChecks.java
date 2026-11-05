@@ -25,10 +25,19 @@ public final class TaintChecks {
       case "TaintedExpression" -> new TaintedExpression(s);
       case "TaintedFormatString" -> new TaintedFormatString(s);
       case "TaintedSize" -> new TaintedSize(s);
+      case "TaintedLoopBound" -> new TaintedLoopBound(s);
       case "TaintedSecurityDecision" -> new TaintedSecurityDecision(s);
       case "SecretLeak" -> new SecretLeak(s);
       default -> throw new IllegalArgumentException(key);
     };
+  }
+
+  /** Parity mode only: the loop bounds that {@code TaintedSize} reports otherwise. */
+  @Rule(key = "TaintedLoopBound")
+  public static final class TaintedLoopBound extends FindingCheck {
+    public TaintedLoopBound(Supplier<Summaries> s) {
+      super(s);
+    }
   }
 
   @Rule(key = "TaintedSql")

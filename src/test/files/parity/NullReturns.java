@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.apache.commons.lang3.SerializationUtils;
+import reactor.core.publisher.Mono;
 
 class Splitter {
   static List<String> split(String s) {
@@ -19,6 +21,23 @@ class Splitter {
 class Waiter {
   String await(Future<String> f) throws Exception {
     return f.get(5, TimeUnit.SECONDS).trim(); // Noncompliant
+  }
+
+  String reactive(Mono<String> m) {
+    return m.block().trim(); // Noncompliant
+  }
+
+  long inLambda(List<Mono<String>> ms) {
+    return ms.stream().map(m -> m.block().trim()).count(); // Noncompliant
+  }
+
+  int copy(ArrayList<String> items) {
+    return SerializationUtils.clone(items).size(); // Noncompliant
+  }
+
+  // declared nullable: NullableDereference in parity mode
+  int annotated(Reply r) {
+    return r.getContent().size();
   }
 
   boolean has(String csv, String item) {

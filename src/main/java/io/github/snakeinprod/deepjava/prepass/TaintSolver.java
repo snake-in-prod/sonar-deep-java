@@ -280,6 +280,10 @@ final class TaintSolver {
       if (rule == null) {
         continue;
       }
+      // parity: loop bounds are a reference class of their own
+      if ("TaintedSize".equals(rule) && s.options().referenceParity() && sink.api() != null && sink.api().startsWith("loop bound")) {
+        rule = "TaintedLoopBound";
+      }
       String key = rule + "|" + where.sourcePath() + "|" + sink.line();
       String message = message(sink, kind, parts.length > 1 ? parts[1] : "?", parts.length > 2 ? parts[2] : "?", passedAt);
       findings.putIfAbsent(key, new Finding(rule, where.sourcePath(), sink.line(), message));

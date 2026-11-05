@@ -3,6 +3,8 @@ package io.github.snakeinprod.deepjava.checks;
 import io.github.snakeinprod.deepjava.prepass.Summaries;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.semantic.Symbol;
@@ -176,6 +178,99 @@ public class CopyPasteCheck extends DeepCheck {
     return false;
   }
 
+  private static final String[][] TWINS = {{"min", "max"}, {"start", "end"}, {"first", "last"}, {"begin", "end"}, {"from", "to"},
+    {"left", "right"}, {"top", "bottom"}, {"width", "height"}, {"lower", "upper"}, {"old", "new"}, {"src", "dst"}, {"source", "target"},
+    {"in", "out"}, {"key", "value"}, {"x", "y"}};
+
+  /** Names that differ from {@code name} by one twin word ({@code minWidth} and {@code maxWidth}). */
+  static Set<String> twins(String name) {
+    Set<String> out = new java.util.HashSet<>();
+    for (String[] pair : TWINS) {
+      for (int k = 0; k < 2; k++) {
+        String a = pair[k];
+        String b = pair[1 - k];
+        String cap = Character.toUpperCase(a.charAt(0)) + a.substring(1);
+        String capB = Character.toUpperCase(b.charAt(0)) + b.substring(1);
+        if (name.startsWith(a) && (name.length() == a.length() || Character.isUpperCase(name.charAt(a.length())))) {
+          out.add(b + name.substring(a.length()));
+        }
+        int at = name.indexOf(cap);
+        if (at > 0 && (at + cap.length() == name.length() || Character.isUpperCase(name.charAt(at + cap.length())))) {
+          out.add(name.substring(0, at) + capB + name.substring(at + cap.length()));
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Locals and parameters of the method around {@code t}, by name. */
+  private static Map<String, Symbol> declared(Tree t) {
+    Tree m = t;
+    while (m != null && !m.is(Tree.Kind.METHOD, Tree.Kind.CONSTRUCTOR)) {
+      m = m.parent();
+    }
+    Map<String, Symbol> out = new java.util.HashMap<>();
+    if (m != null) {
+      Trees.collect(m, VariableTree.class).forEach(v -> out.put(v.simpleName().name(), v.symbol()));
+      ((org.sonar.plugins.java.api.tree.MethodTree) m).parameters().forEach(v -> out.put(v.simpleName().name(), v.symbol()));
+    }
+    return out;
+  }
+
+  /** {@code range(start, start)} where {@code end} is declared and never used: the second was meant to be its twin. */
+  private void argumentTwin(MethodInvocationTree call) {
+    List<IdentifierTree> ids = new ArrayList<>();
+    for (ExpressionTree a : call.arguments()) {
+      if (Trees.skip(a) instanceof IdentifierTree id && Trees.isLocal(id.symbol())) {
+        ids.add(id);
+      }
+    }
+    for (int j = 1; j < ids.size(); j++) {
+      for (int i = 0; i < j; i++) {
+        if (!ids.get(i).symbol().equals(ids.get(j).symbol())) {
+          continue;
+        }
+        Map<String, Symbol> vars = declared(call);
+        for (String twin : twins(ids.get(j).name())) {
+          Symbol t = vars.get(twin);
+          if (t != null && t.usages().isEmpty()) {
+            reportIssue(ids.get(j), "\"" + ids.get(j).name() + "\" is passed twice while \"" + twin + "\" is never used: did you mean \""
+              + twin + "\"?");
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  /** {@code minWidth = 0; minWidth = 100;} next to an unassigned {@code maxWidth}: the second was meant for the twin. */
+  private void constantToTwin(BlockTree block) {
+    List<StatementTree> body = block.body();
+    for (int k = 1; k < body.size(); k++) {
+      org.sonar.plugins.java.api.tree.AssignmentExpressionTree a = constantAssignment(body.get(k - 1));
+      org.sonar.plugins.java.api.tree.AssignmentExpressionTree b = constantAssignment(body.get(k));
+      Symbol va = a == null ? null : Trees.symbol(a.variable());
+      if (b == null || va == null || !va.equals(Trees.symbol(b.variable()))) {
+        continue;
+      }
+      Symbol owner = va.owner();
+      for (String twin : twins(va.name())) {
+        Symbol t = Trees.isLocal(va) ? declared(block).get(twin) : owner != null && owner.isTypeSymbol()
+          ? ((Symbol.TypeSymbol) owner).lookupSymbols(twin).stream().findFirst().orElse(null) : null;
+        if (t != null && !Trees.assigns(block, t)) {
+          reportIssue(b.variable(), "\"" + va.name() + "\" is set twice in a row while \"" + twin + "\" is not set: did you mean \""
+            + twin + "\"?");
+          break;
+        }
+      }
+    }
+  }
+
+  private static org.sonar.plugins.java.api.tree.AssignmentExpressionTree constantAssignment(StatementTree st) {
+    return st instanceof ExpressionStatementTree es && es.expression() instanceof org.sonar.plugins.java.api.tree.AssignmentExpressionTree a
+      && a.is(Tree.Kind.ASSIGNMENT) && a.expression().asConstant().isPresent() ? a : null;
+  }
+
   /** Longer statements are data (an embedded document, a generated table), never a renamed copy. */
   private static final int MAX_TEXT = 2000;
 
@@ -225,6 +320,10 @@ public class CopyPasteCheck extends DeepCheck {
   public void visitNode(Tree tree) {
     if (tree instanceof BlockTree block && summaries.get().options().referenceParity()) {
       guarded(block, () -> renamedPairs(block));
+      guarded(block, () -> constantToTwin(block));
+    }
+    if (tree instanceof MethodInvocationTree call && summaries.get().options().referenceParity()) {
+      guarded(call, () -> argumentTwin(call));
     }
     if (tree instanceof org.sonar.plugins.java.api.tree.IfStatementTree ifs) {
       if (summaries.get().options().referenceParity()) {

@@ -40,6 +40,19 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
     this.summaries = summaries;
   }
 
+  /**
+   * Whether this rule reports a null of this origin. In parity mode a declared nullable (annotation on the method,
+   * its return type, a field or a parameter, in project or library code) belongs to {@code NullableDereference}.
+   */
+  protected boolean reports(boolean declaredNullable) {
+    return !(declaredNullable && summaries.get().options().referenceParity());
+  }
+
+  private static boolean declared(NullReason r) {
+    NullReason.Kind k = r.root().kind();
+    return k == NullReason.Kind.ANNOTATED || k == NullReason.Kind.NULLABLE_FIELD;
+  }
+
   @Override
   public List<Tree.Kind> nodesToVisit() {
     return List.of(Tree.Kind.METHOD_INVOCATION, Tree.Kind.METHOD);
@@ -48,8 +61,10 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
   @Override
   public void visitNode(Tree tree) {
     if (tree instanceof MethodTree method) {
-      visitOverride(method);
-      nullableFields(method);
+      if (reports(true)) {
+        visitOverride(method);
+        nullableFields(method);
+      }
       return;
     }
     MethodInvocationTree mit = (MethodInvocationTree) tree;
@@ -61,6 +76,9 @@ public class NullReturnDereferenceCheck extends IssuableSubscriptionVisitor {
       return;
     }
     NullReason r = reason.get();
+    if (!reports(declared(r))) {
+      return;
+    }
     Summaries.CallStats stats = s.callStats(key);
     String evidence = !r.isStrong() && stats.checked() > 0 ?"; null-checked at " + stats.checked() + " of " + stats.sites() + " call sites" : "";
     String message = "\"" + r.method() + "\" can return null (" + r.detail() + evidence + "); check the result before dereferencing it.";

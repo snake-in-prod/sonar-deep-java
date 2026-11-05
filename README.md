@@ -11,7 +11,7 @@ See [docs/SPEC.md](docs/SPEC.md) for the specification this plugin implements.
 
 ## Rules
 
-58 rules. Rules marked * are available but not in the default profile (on real projects most of their issues were
+65 rules. Rules marked * are available but not in the default profile (on real projects most of their issues were
 intended code; see the benchmark).
 
 | Rule | What it finds | CWE |
@@ -22,10 +22,13 @@ intended code; see the benchmark).
 | `DereferenceBeforeNullCheck` | Values should not be compared to null after they were dereferenced | 476 |
 | `NullCheckedAtMostCallSites` | Results null-checked at most call sites should be checked here | 476, 252 |
 | `NullAssignedThenDereferenced` | Variables set to null on one path should not be dereferenced after the paths join | 476 |
+| `NullableDereference`** | Values declared nullable should not be dereferenced | 476 |
+| `DereferenceAfterNullCheck`** | Values compared to null should not be dereferenced on the null path | 476 |
 | **2. resources** | | |
 | `ResourceFromHelperNotClosed` | Resources returned by helper methods should be closed | 404, 772 |
 | `ResourceClosedTwice` | Resources should not be closed twice | 675 |
 | `ResourceUsedAfterClose` | Resources should not be used after they are closed | 672 |
+| `ResourceLeak`** | Streams should not leak when a wrapper constructor throws | 772 |
 | **3. taint** | | |
 | `TaintedSql` | SQL queries should not be built from user input | 89 |
 | `TaintedCommand` | OS commands should not be built from user input | 78 |
@@ -39,6 +42,7 @@ intended code; see the benchmark).
 | `TaintedExpression` | Expression languages should not evaluate user input | 917 |
 | `TaintedFormatString` | Format strings should not come from user input | 134 |
 | `TaintedSize` | Sizes, indexes and loop bounds should not come from unchecked user input | 129, 789, 400, 606 |
+| `TaintedLoopBound`** | Loop bounds should not come from unchecked input | 606, 400 |
 | `TaintedSecurityDecision` | Security decisions should not rely on cookies or unverified tokens | 565, 345 |
 | **4. ranges** | | |
 | `NegativeIndexFromSearch` | Results of search methods should be checked before they are used as an index | 129, 125 |
@@ -69,6 +73,8 @@ intended code; see the benchmark).
 | `DeadEnumCase` | Switch cases should be reachable | 561 |
 | `EmptyMapLookup` | Lookups in maps that are never filled are always empty | 570 |
 | `LombokUnreachableCode`** | Lombok-generated members should not test @NonNull values for null | 561 |
+| `UnreachableCode`** | Statements should be reachable | 561 |
+| `InvariantResult`** | Comparisons should not have a value that does not depend on their inputs | 570, 571 |
 | **9. smaller rules** | | |
 | `TernaryPrecedence` | Ternary operators should be parenthesized when mixed with arithmetic | 783 |
 | `CollectionModifiedInForEach` | Collections should not be modified while they are iterated |  |
@@ -83,9 +89,12 @@ intended code; see the benchmark).
 | `SwappedArguments` | Arguments should not be passed in swapped order | 683 |
 | `TimingUnsafeSecretComparison` | Secrets should be compared in constant time | 208 |
 | `CopyPasteIdentifier` | Expressions copied from a neighbour should rename every identifier |  |
+| `IdenticalBranches`** | Branches of an if / else if chain should not be copies with only the condition literal changed | 1041 |
 
 All rules except those marked * are added to the built-in "Sonar way" Java profile. Rules marked ** report only
-with `sonar.deepjava.referenceParity=true`.
+with `sonar.deepjava.referenceParity=true`; in that mode each takes over one class of the reference analyzer from an
+older rule (`NullableDereference` from `NullReturnDereference`, `TaintedLoopBound` from `TaintedSize`, `InvariantResult`
+from `ConstantConditionFromCallee`), which keeps its full meaning outside parity mode.
 
 ### "Deep Java" profile
 

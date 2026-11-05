@@ -41,12 +41,12 @@ class Limits {
   }
 
   void purge(long period) {
-    for (long t = 0; t < period; t++) { // Noncompliant
+    for (long t = 0; t < period; t++) {
       System.out.println(t);
     }
   }
 
   void retention(Map<String, String> cfg) {
-    purge(Long.parseLong(cfg.get("period"))); // Noncompliant
+    purge(Long.parseLong(cfg.get("period"))); // loop bound: TaintedLoopBound in parity mode
   }
 }

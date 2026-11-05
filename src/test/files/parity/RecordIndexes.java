@@ -10,7 +10,7 @@ class Columns {
 
   static int sum(int[] values, int count) {
     int s = 0;
-    for (int i = 0; i < count; i++) { // Noncompliant
+    for (int i = 0; i < count; i++) { // loop bound: TaintedLoopBound
       s += values[i];
     }
     return s;

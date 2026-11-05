@@ -98,7 +98,7 @@ class ParityTest {
 
   @Test
   void nullable_from_libraries_and_generated_code() throws Exception {
-    verify("src/test/files/parity/NullableSources.java", s -> new NullReturnDereferenceCheck(() -> s));
+    verify("src/test/files/parity/NullableSources.java", s -> new NullableDereferenceCheck(() -> s));
   }
 
   @Test
@@ -118,7 +118,7 @@ class ParityTest {
 
   @Test
   void null_returns_of_future_get_and_helpers() throws Exception {
-    verify("src/test/files/parity/NullReturns.java", s -> new NullReturnDereferenceCheck(() -> s));
+    verify("src/test/files/parity/NullReturns.java", s -> new NullReturnDereferenceCheck(() -> s), "src/test/files/parity/NullableSources.java");
   }
 
   @Test
@@ -164,6 +164,11 @@ class ParityTest {
   @Test
   void parsed_record_integers_as_indexes_through_helpers() throws Exception {
     verify("src/test/files/parity/RecordIndexes.java", s -> (JavaFileScanner) TaintChecks.create("TaintedSize", () -> s));
+  }
+
+  @Test
+  void copy_paste_twins() throws Exception {
+    verify("src/test/files/parity/CopyPasteTwins.java", s -> new CopyPasteCheck(() -> s));
   }
 
   @Test

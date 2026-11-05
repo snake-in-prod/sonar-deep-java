@@ -185,7 +185,10 @@ public final class FindingChecks {
 
     @Override
     protected boolean accept(Summaries.Finding f) {
-      List<String> lines = context.getFileLines();
+      return onLombokLine(f, context.getFileLines());
+    }
+
+    static boolean onLombokLine(Summaries.Finding f, List<String> lines) {
       try {
         return f.line() <= lines.size() && LOMBOK.matcher(lines.get(f.line() - 1)).find();
       } catch (StackOverflowError | RuntimeException e) {

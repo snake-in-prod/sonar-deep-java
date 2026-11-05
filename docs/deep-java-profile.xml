@@ -593,13 +593,16 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>ConstantConditionFromCallee</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>CopyPasteIdentifier</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>DeadEnumCase</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>DereferenceAfterNullCheck</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>DereferenceBeforeNullCheck</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>DivisionByPossibleZero</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>EmptyMapLookup</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>GuardedByViolation</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>IdenticalBranches</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>IgnoredResultStatistical</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>InconsistentLocking</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>IndexCheckedAfterUse</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>InvariantResult</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>LockNotReleasedAcrossMethods</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>LockOrderCycle</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>LombokUnreachableCode</key></rule>
@@ -612,11 +615,13 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>NullCheckedAtMostCallSites</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>NullPassedToDereferencedParameter</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>NullReturnDereference</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>NullableDereference</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>OffByOneLoopBound</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>RegexFlagsUseless</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>RegexPitfall</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>ResourceClosedTwice</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>ResourceFromHelperNotClosed</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>ResourceLeak</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>ResourceUsedAfterClose</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>SecretLeak</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>SetupAfterLastAssertion</key></rule>
@@ -628,6 +633,7 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedHeader</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedLdap</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedLog</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>TaintedLoopBound</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedPath</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedRedirect</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>TaintedSecurityDecision</key></rule>
@@ -640,6 +646,7 @@
     <rule><repositoryKey>deepjava</repositoryKey><key>UnboundedAuthRetry</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>UncheckedExceptionInEntryPoint</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>UnreachableCatch</key></rule>
+    <rule><repositoryKey>deepjava</repositoryKey><key>UnreachableCode</key></rule>
     <rule><repositoryKey>deepjava</repositoryKey><key>UnrelatedKeyType</key></rule>
   </rules>
 </profile>

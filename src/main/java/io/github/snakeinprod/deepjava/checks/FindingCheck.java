@@ -27,15 +27,19 @@ public abstract class FindingCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public void visitNode(Tree tree) {
-    CompilationUnitTree cu = (CompilationUnitTree) tree;
-    String pkg = cu.packageDeclaration() == null ? "" : name(cu.packageDeclaration().packageName()).replace('.', '/') + "/";
-    String path = pkg + context.getInputFile().filename();
+    String path = path((CompilationUnitTree) tree, context);
     String key = getClass().getAnnotation(Rule.class).key();
     for (Summaries.Finding f : summaries.get().findings(key, path)) {
       if (accept(f)) {
         addIssue(f.line(), f.message());
       }
     }
+  }
+
+  /** The source path findings use: package directories and file name ({@code com/acme/Foo.java}). */
+  static String path(CompilationUnitTree cu, org.sonar.plugins.java.api.JavaFileScannerContext context) {
+    String pkg = cu.packageDeclaration() == null ? "" : name(cu.packageDeclaration().packageName()).replace('.', '/') + "/";
+    return pkg + context.getInputFile().filename();
   }
 
   /** Whether to report a finding on this file (subclasses filter by source text). */
