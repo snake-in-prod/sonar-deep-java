@@ -551,11 +551,21 @@ public final class Summaries {
   private NullReason compute(String callKey) {
     Call c = parse(callKey);
     LibraryModels.Match lib = models.nullableReturn(c.owner(), c.name(), c.desc(), hierarchy);
+    if (lib != null && c.knownLookup() && !lib.guards().isEmpty()) {
+      // constant table, or a get(key) wrapper whose caller chooses the key: content is known to the author
+      return null;
+    }
+    NullReason model = modelReason(c, lib);
+    if (model == null || !options.referenceParity()) {
+      return model != null ? model : projectReason(c);
+    }
+    // parity: a project implementation of a modelled method (a Future whose get(timeout) returns null) speaks for itself
+    NullReason project = targetClasses(c.owner(), c.nameDesc(), c.exact()).isEmpty() ? null : projectReason(c);
+    return project != null ? project : model;
+  }
+
+  private NullReason modelReason(Call c, LibraryModels.Match lib) {
     if (lib != null) {
-      if (c.knownLookup() && !lib.guards().isEmpty()) {
-        // constant table, or a get(key) wrapper whose caller chooses the key: content is known to the author
-        return null;
-      }
       // parity: a model entry the library itself annotates nullable is a declared nullable, as for the reference analyzer
       boolean annotated = options.referenceParity() && (models.annotatedNullable(lib.entry()) || libraryAnnotated(c) != null);
       return new NullReason(display(c.owner(), c.name()), null, null, annotated ? NullReason.Kind.ANNOTATED : NullReason.Kind.LIBRARY, lib.guards());
@@ -564,6 +574,10 @@ public final class Summaries {
     if (options.referenceParity() && models.nullForNullArgument(c.owner(), c.name())) {
       return new NullReason(display(c.owner(), c.name()), null, null, NullReason.Kind.LIBRARY, Set.of());
     }
+    return null;
+  }
+
+  private NullReason projectReason(Call c) {
     List<ClassFacts> targets = targetClasses(c.owner(), c.nameDesc(), c.exact());
     if (targets.size() > thresholds.maxTargets()) {
       return null;

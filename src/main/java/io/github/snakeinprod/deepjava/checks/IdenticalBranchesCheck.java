@@ -39,6 +39,14 @@ public class IdenticalBranchesCheck extends DeepCheck {
       for (StatementTree s = first; s instanceof IfStatementTree i; s = i.elseStatement()) {
         chain.add(i);
       }
+      // the last else if and the final else do the same
+      IfStatementTree last = chain.get(chain.size() - 1);
+      if (chain.size() > 1 && last.elseStatement() != null && !(last.elseStatement() instanceof IfStatementTree)) {
+        String body = text(last.thenStatement());
+        if (body.length() >= 10 && body.length() <= MAX_TEXT && body.equals(text(last.elseStatement()))) {
+          reportIssue(last.condition(), "This branch has the same body as the final else: the condition makes no difference.");
+        }
+      }
       for (int j = 1; j < chain.size(); j++) {
         for (int i = 0; i < j; i++) {
           if (same(chain.get(i), chain.get(j))) {

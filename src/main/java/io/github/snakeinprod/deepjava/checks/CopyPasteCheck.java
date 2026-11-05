@@ -32,7 +32,7 @@ public class CopyPasteCheck extends DeepCheck {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.BLOCK, Tree.Kind.METHOD_INVOCATION);
+    return List.of(Tree.Kind.BLOCK, Tree.Kind.METHOD_INVOCATION, Tree.Kind.IF_STATEMENT);
   }
 
   /** {@code left.lp OP right.rp}. */
@@ -176,8 +176,102 @@ public class CopyPasteCheck extends DeepCheck {
     return out;
   }
 
+  /** Variables (locals, parameters, fields) named in {@code t}. */
+  private static Set<Symbol> variables(Tree t) {
+    Set<Symbol> out = new java.util.LinkedHashSet<>();
+    for (IdentifierTree id : Trees.collect(t, IdentifierTree.class)) {
+      Symbol s = id.symbol();
+      if (s != null && s.isVariableSymbol() && !s.isUnknown() && !(s.isStatic() && s.isFinal())) {
+        out.add(s);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * An if / else if chain whose branches each pass on the variable their condition tests, except one, which tests one
+   * variable and passes a sibling that another branch tests: {@code if (!ok(newData)) report(thisNe)}.
+   */
+  private void chainSiblings(org.sonar.plugins.java.api.tree.IfStatementTree first) {
+    List<org.sonar.plugins.java.api.tree.IfStatementTree> chain = new ArrayList<>();
+    for (Tree s = first; s instanceof org.sonar.plugins.java.api.tree.IfStatementTree i; s = i.elseStatement()) {
+      chain.add(i);
+    }
+    if (chain.size() < 2) {
+      return;
+    }
+    List<Set<Symbol>> cond = new ArrayList<>();
+    List<Set<Symbol>> body = new ArrayList<>();
+    for (var i : chain) {
+      cond.add(variables(i.condition()));
+      body.add(variables(i.thenStatement()));
+    }
+    for (int i = 0; i < chain.size(); i++) {
+      int at = i;
+      boolean othersConsistent = java.util.stream.IntStream.range(0, chain.size()).filter(j -> j != at)
+        .allMatch(j -> !java.util.Collections.disjoint(cond.get(j), body.get(j)));
+      if (!othersConsistent || !java.util.Collections.disjoint(cond.get(i), body.get(i))) {
+        continue;
+      }
+      for (Symbol x : body.get(i)) {
+        boolean testedElsewhere = java.util.stream.IntStream.range(0, chain.size()).anyMatch(j -> j != at && cond.get(j).contains(x));
+        Symbol tested = cond.get(i).stream().filter(y -> y.type().equals(x.type())).findFirst().orElse(null);
+        if (testedElsewhere && tested != null) {
+          IdentifierTree use = Trees.collect(chain.get(i).thenStatement(), IdentifierTree.class).stream().filter(id -> x.equals(id.symbol()))
+            .findFirst().orElseThrow();
+          reportIssue(use, "The condition tests \"" + tested.name() + "\" but the branch uses \"" + x.name() + "\", which another branch "
+            + "tests: did you mean \"" + tested.name() + "\"?");
+          return;
+        }
+      }
+    }
+  }
+
+  /** {@code if (anchorType != null) return nonAnchorType;} with twin parameters: the branch tests one and returns the other. */
+  private void twinReturn(org.sonar.plugins.java.api.tree.IfStatementTree ifs) {
+    Tree m = Trees.enclosingMethod(ifs);
+    if (!(m instanceof org.sonar.plugins.java.api.tree.MethodTree method)
+      || !(ifs.thenStatement() instanceof org.sonar.plugins.java.api.tree.ReturnStatementTree
+        || ifs.thenStatement() instanceof BlockTree b && b.body().size() == 1 && b.body().get(0) instanceof org.sonar.plugins.java.api.tree.ReturnStatementTree)) {
+      return;
+    }
+    var ret = ifs.thenStatement() instanceof BlockTree b ? (org.sonar.plugins.java.api.tree.ReturnStatementTree) b.body().get(0)
+      : (org.sonar.plugins.java.api.tree.ReturnStatementTree) ifs.thenStatement();
+    if (ret.expression() == null || !(Trees.skip(ret.expression()) instanceof IdentifierTree returned)) {
+      return;
+    }
+    Set<Symbol> tested = variables(ifs.condition());
+    for (VariableTree p : method.parameters()) {
+      Symbol a = p.symbol();
+      if (tested.contains(a) && !tested.contains(returned.symbol()) && isParameter(method, returned.symbol()) && areTwins(a.name(), returned.name())) {
+        reportIssue(returned, "The condition tests \"" + a.name() + "\" but returns its twin \"" + returned.name() + "\": did you mean \""
+          + a.name() + "\"?");
+        return;
+      }
+    }
+  }
+
+  private static boolean isParameter(org.sonar.plugins.java.api.tree.MethodTree m, Symbol s) {
+    return m.parameters().stream().anyMatch(p -> p.symbol().equals(s));
+  }
+
+  static boolean areTwins(String a, String b) {
+    String capA = a.isEmpty() ? a : Character.toUpperCase(a.charAt(0)) + a.substring(1);
+    String capB = b.isEmpty() ? b : Character.toUpperCase(b.charAt(0)) + b.substring(1);
+    return twins(a).contains(b) || b.equals("non" + capA) || a.equals("non" + capB);
+  }
+
   @Override
   public void visitNode(Tree tree) {
+    if (tree instanceof org.sonar.plugins.java.api.tree.IfStatementTree ifs) {
+      if (summaries.get().options().referenceParity()) {
+        if (!(ifs.parent() instanceof org.sonar.plugins.java.api.tree.IfStatementTree p && p.elseStatement() == ifs)) {
+          guarded(ifs, () -> chainSiblings(ifs));
+        }
+        guarded(ifs, () -> twinReturn(ifs));
+      }
+      return;
+    }
     if (tree instanceof BlockTree block && summaries.get().options().referenceParity()) {
       guarded(block, () -> constantToTwin(block));
     }

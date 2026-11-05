@@ -26,6 +26,11 @@ public class RegexPitfallCheck extends DeepCheck {
   /** {@code (a|b)}, {@code (^|-)}: every alternative is one character or anchor. */
   private static final Pattern SINGLE_ALTERNATIVES = Pattern.compile("(?<!\\\\)\\((\\?:)?+(\\\\.|[^|()\\\\])(\\|(?:\\\\.|[^|()\\\\]))++\\)");
 
+  /** {@code \000}: an octal escape that reads like repeated zeros. */
+  private static final Pattern OCTAL = Pattern.compile("(?<!\\\\)\\\\0[0-7]+");
+  /** {@code " |,|\r"}: the whole regex is single characters as alternatives, without a group. */
+  private static final Pattern TOP_ALTERNATIVES = Pattern.compile("(\\\\.|[^|\\\\()\\[\\]])(\\|(\\\\.|[^|\\\\()\\[\\]]))+");
+
   public RegexPitfallCheck(Supplier<Summaries> summaries) {
     super(summaries);
   }
@@ -60,6 +65,11 @@ public class RegexPitfallCheck extends DeepCheck {
     } else if (alternatives.find()) {
       reportIssue(arg, "\"" + alternatives.group() + "\" lists single characters as alternatives; use a character class "
         + "(or an anchor with a class, such as \"(?:^|[-])\").");
+    } else if (summaries.get().options().referenceParity() && OCTAL.matcher(regex).find()) {
+      reportIssue(arg, "\"" + OCTAL.matcher(regex).results().findFirst().orElseThrow().group() + "\" is an octal escape; write \"\\\\x00\" if a NUL "
+        + "character is meant.");
+    } else if (summaries.get().options().referenceParity() && TOP_ALTERNATIVES.matcher(regex).matches()) {
+      reportIssue(arg, "The regex lists single characters as alternatives; use a character class.");
     } else if (onString && !"matches".equals(name) && (literalWithDot(regex) || ".".equals(regex) && summaries.get().options().referenceParity())) {
       reportIssue(arg, "\".\" in the regex of \"" + name + "()\" matches any character; escape it (\"\\\\.\") or use replace().");
     }

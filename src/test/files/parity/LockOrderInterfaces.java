@@ -8,7 +8,7 @@ class Registry {
   private Listener listener;
 
   synchronized void register() {
-    listener.onChange();
+    listener.onChange(); // Noncompliant
   }
 
   synchronized void lookup() {

@@ -1112,7 +1112,10 @@ public final class BytecodeScanner implements Opcodes {
       } else if (insn instanceof MethodInsnNode im && sp > 0 && (("java/lang/String".equals(im.owner) && Set.of("charAt", "substring").contains(im.name))
         || (im.owner.startsWith("java/util/") && im.owner.endsWith("List") && Set.of("get", "set", "remove").contains(im.name) && im.desc.startsWith("(I")))) {
         int argc = Type.getArgumentTypes(im.desc).length;
-        indexUses.add(f.getStack(sp - argc).local());
+        // substring(begin, end): both are indexes; set(i, e) and the others index with the first
+        for (int k = 0; k < ("substring".equals(im.name) ? argc : 1); k++) {
+          indexUses.add(f.getStack(sp - argc + k).local());
+        }
       }
 
       // null tests of values declared non-null

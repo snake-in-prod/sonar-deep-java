@@ -112,6 +112,71 @@ class ParityTest {
   }
 
   @Test
+  void project_future_overrides_its_model() throws Exception {
+    verify("src/test/files/parity/FutureSubclass.java", s -> new NullReturnDereferenceCheck(() -> s));
+  }
+
+  @Test
+  void ignored_jdk_status_checked_almost_everywhere() throws Exception {
+    verify("src/test/files/parity/IgnoredDelete.java", s -> new FindingChecks.IgnoredResult(() -> s));
+  }
+
+  @Test
+  void octal_escapes_and_bare_single_character_alternatives() throws Exception {
+    verify("src/test/files/parity/RegexParity.java", s -> new RegexPitfallCheck(() -> s));
+  }
+
+  @Test
+  void last_else_if_equal_to_final_else() throws Exception {
+    verify("src/test/files/parity/ElseCopies.java", s -> new IdenticalBranchesCheck(() -> s));
+  }
+
+  @Test
+  void wrapper_in_a_local_never_closed() throws Exception {
+    verify("src/test/files/parity/LocalWrappers.java", s -> new ResourceLeakCheck(() -> s));
+  }
+
+  @Test
+  void secret_compared_with_a_constant() throws Exception {
+    verify("src/test/files/parity/ConstantSecrets.java", s -> new TimingUnsafeSecretComparisonCheck(() -> s));
+  }
+
+  @Test
+  void branch_passes_a_sibling_and_twin_returned() throws Exception {
+    verify("src/test/files/parity/BranchCopies.java", s -> new CopyPasteCheck(() -> s));
+  }
+
+  @Test
+  void lombok_equals_without_included_members() throws Exception {
+    verify("src/test/files/parity/LombokEquals.java", s -> new UnreachableCodeCheck(() -> s));
+  }
+
+  @Test
+  void char_range_inside_a_longer_condition() throws Exception {
+    verify("src/test/files/parity/InvariantNested.java", s -> new InvariantResultCheck(() -> s));
+  }
+
+  @Test
+  void synchronized_methods_calling_each_other() throws Exception {
+    verify("src/test/files/parity/SynchronizedCallback.java", s -> new FindingChecks.LockOrder(() -> s));
+  }
+
+  @Test
+  void zero_helper_passed_to_a_dividing_helper() throws Exception {
+    verify("src/test/files/parity/ZeroPassedOn.java", s -> new DivisionByPossibleZeroCheck(() -> s));
+  }
+
+  @Test
+  void null_local_as_tenth_argument() throws Exception {
+    verify("src/test/files/parity/NullTenthArgument.java", s -> new NullArgumentCheck(() -> s));
+  }
+
+  @Test
+  void search_index_passed_on_after_branches() throws Exception {
+    verify("src/test/files/parity/NegativeLater.java", s -> new NegativeIndexCheck(() -> s));
+  }
+
+  @Test
   void copy_paste_roles_repeated_in_the_block() throws Exception {
     verify("src/test/files/parity/CopyPasteRoles.java", s -> new CopyPasteCheck(() -> s));
   }

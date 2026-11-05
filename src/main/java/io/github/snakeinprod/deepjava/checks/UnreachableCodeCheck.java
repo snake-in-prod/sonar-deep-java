@@ -39,7 +39,7 @@ public class UnreachableCodeCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.COMPILATION_UNIT, Tree.Kind.FOR_STATEMENT, Tree.Kind.TRY_STATEMENT);
+    return List.of(Tree.Kind.COMPILATION_UNIT, Tree.Kind.FOR_STATEMENT, Tree.Kind.TRY_STATEMENT, Tree.Kind.CLASS);
   }
 
   @Override
@@ -61,6 +61,10 @@ public class UnreachableCodeCheck extends IssuableSubscriptionVisitor {
           addIssue(f.line(), f.message());
         }
       }
+      return;
+    }
+    if (tree instanceof org.sonar.plugins.java.api.tree.ClassTree c) {
+      noIncludedField(c);
       return;
     }
     if (tree instanceof TryStatementTree t) {
@@ -108,6 +112,29 @@ public class UnreachableCodeCheck extends IssuableSubscriptionVisitor {
       }
     }
     return true;
+  }
+
+  /**
+   * Lombok {@code @EqualsAndHashCode(onlyExplicitlyIncluded = true)} with no {@code @EqualsAndHashCode.Include}: the
+   * generated equals() compares nothing, so its field comparisons never run.
+   */
+  private void noIncludedField(org.sonar.plugins.java.api.tree.ClassTree c) {
+    for (var a : c.modifiers().annotations()) {
+      if (!a.symbolType().is("lombok.EqualsAndHashCode")) {
+        continue;
+      }
+      boolean explicit = a.arguments().stream().anyMatch(arg -> arg instanceof org.sonar.plugins.java.api.tree.AssignmentExpressionTree as
+        && as.variable() instanceof IdentifierTree id && "onlyExplicitlyIncluded".equals(id.name())
+        && Boolean.TRUE.equals(as.expression().asConstant().orElse(null)));
+      boolean included = c.members().stream().flatMap(m -> m instanceof VariableTree v ? v.modifiers().annotations().stream()
+          : m instanceof org.sonar.plugins.java.api.tree.MethodTree mt ? mt.modifiers().annotations().stream() : java.util.stream.Stream.empty())
+        .anyMatch(x -> x.annotationType() instanceof org.sonar.plugins.java.api.tree.MemberSelectExpressionTree ms && "Include".equals(ms.identifier().name())
+          && (ms.expression() instanceof org.sonar.plugins.java.api.tree.MemberSelectExpressionTree e && "EqualsAndHashCode".equals(e.identifier().name())
+            || ms.expression() instanceof IdentifierTree e2 && "EqualsAndHashCode".equals(e2.name())));
+      if (explicit && !included && lines.add(Trees.line(a))) {
+        reportIssue(a, "No member is marked @EqualsAndHashCode.Include: the generated equals() compares nothing and every instance is equal.");
+      }
+    }
   }
 
   /**

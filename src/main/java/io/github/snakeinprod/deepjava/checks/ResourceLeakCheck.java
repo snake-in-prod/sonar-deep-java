@@ -29,11 +29,15 @@ public class ResourceLeakCheck extends DeepCheck {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return List.of(Tree.Kind.NEW_CLASS);
+    return List.of(Tree.Kind.NEW_CLASS, Tree.Kind.VARIABLE);
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if (tree instanceof org.sonar.plugins.java.api.tree.VariableTree v) {
+      local(v);
+      return;
+    }
     NewClassTree wrapper = (NewClassTree) tree;
     if (!summaries.get().options().referenceParity() || !THROWING_WRAPPERS.contains(wrapper.symbolType().fullyQualifiedName())) {
       return;
@@ -44,5 +48,22 @@ public class ResourceLeakCheck extends DeepCheck {
           + "\" constructor throws; open it in its own try-with-resources.");
       }
     }
+  }
+
+  /** {@code GZIPInputStream g = new GZIPInputStream(in);} in a local that is never closed, returned or passed on. */
+  private void local(org.sonar.plugins.java.api.tree.VariableTree v) {
+    if (!summaries.get().options().referenceParity() || !(v.initializer() != null && Trees.skip(v.initializer()) instanceof NewClassTree nc)
+      || !THROWING_WRAPPERS.contains(nc.symbolType().fullyQualifiedName()) || !Trees.isLocal(v.symbol())
+      || v.parent() != null && v.parent().is(Tree.Kind.LIST) || v.parent() instanceof org.sonar.plugins.java.api.tree.TryStatementTree) {
+      return;
+    }
+    for (org.sonar.plugins.java.api.tree.IdentifierTree u : v.symbol().usages()) {
+      Tree p = u.parent();
+      boolean closed = p instanceof org.sonar.plugins.java.api.tree.MemberSelectExpressionTree ms && "close".equals(ms.identifier().name());
+      if (closed || p != null && (p.is(Tree.Kind.ARGUMENTS, Tree.Kind.RETURN_STATEMENT, Tree.Kind.ASSIGNMENT, Tree.Kind.VARIABLE, Tree.Kind.LAMBDA_EXPRESSION))) {
+        return;
+      }
+    }
+    reportIssue(nc, "\"" + v.simpleName().name() + "\" is never closed.");
   }
 }

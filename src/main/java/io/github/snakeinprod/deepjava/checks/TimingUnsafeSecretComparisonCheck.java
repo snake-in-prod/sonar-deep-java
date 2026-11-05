@@ -49,15 +49,17 @@ public class TimingUnsafeSecretComparisonCheck extends DeepCheck {
       // value equality of a data class, not an authentication check
       return;
     }
-    if (isLiteral(a) || isLiteral(b) || !(isSecret(a) || isSecret(b))) {
+    // parity: a constant field (a hard-coded expected password) is compared like any value
+    boolean parity = summaries.get().options().referenceParity();
+    if (isLiteral(a, parity) || isLiteral(b, parity) || !(isSecret(a) || isSecret(b))) {
       return;
     }
     reportIssue(mit, "Secrets compared with \"" + Trees.name(mit) + "()\" leak their content through timing; use MessageDigest.isEqual().");
   }
 
-  private static boolean isLiteral(ExpressionTree e) {
+  private static boolean isLiteral(ExpressionTree e, boolean parity) {
     e = Trees.skip(e);
-    return e.asConstant().isPresent() || e.is(Tree.Kind.NULL_LITERAL);
+    return (parity ? e instanceof org.sonar.plugins.java.api.tree.LiteralTree : e.asConstant().isPresent()) || e.is(Tree.Kind.NULL_LITERAL);
   }
 
   private static boolean isSecret(ExpressionTree e) {

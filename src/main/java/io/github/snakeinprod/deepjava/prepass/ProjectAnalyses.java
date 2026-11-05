@@ -138,7 +138,9 @@ final class ProjectAnalyses implements Opcodes {
       // project methods and side-effect-free JDK values (Integer.parseInt() called only to validate); other JDK
       // results such as Iterator.next() are often skipped on purpose
       boolean pureJdk = PURE_JDK.matcher(c.owner()).matches() && !c.desc().endsWith(")V");
-      if (!pureJdk && (c.desc().endsWith(")L" + c.owner() + ";") || c.desc().endsWith(")Ljava/lang/Object;") || s.targets(k).isEmpty()
+      // parity: a JDK boolean status (File.delete(), mkdirs()) checked almost everywhere counts too
+      boolean jdkStatus = s.options().referenceParity() && c.owner().startsWith("java/") && c.desc().endsWith(")Z");
+      if (!pureJdk && !jdkStatus && (c.desc().endsWith(")L" + c.owner() + ";") || c.desc().endsWith(")Ljava/lang/Object;") || s.targets(k).isEmpty()
         || s.neverReturns(k))) {
         return;
       }
@@ -463,7 +465,8 @@ final class ProjectAnalyses implements Opcodes {
     graph.forEach((edge, site) -> {
       String[] ab = edge.split("->");
       Site reverse = graph.get(ab[1] + "->" + ab[0]);
-      if (reverse != null && ab[0].compareTo(ab[1]) < 0) {
+      // parity: both sides of the cycle, as the reference analyzer reports them
+      if (reverse != null && (ab[0].compareTo(ab[1]) < 0 || s.options().referenceParity())) {
         add(LOCK_ORDER, site.c(), site.line(), lockName(ab[1]) + " is acquired while holding " + lockName(ab[0])
           + " here, and in the opposite order at " + Summaries.location(reverse.c(), reverse.line()) + "; this can deadlock.");
       }
