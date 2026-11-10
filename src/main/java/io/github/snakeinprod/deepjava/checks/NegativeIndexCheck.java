@@ -8,10 +8,19 @@ import java.util.function.Supplier;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.ArrayAccessExpressionTree;
+import org.sonar.plugins.java.api.tree.BinaryExpressionTree;
+import org.sonar.plugins.java.api.tree.BlockTree;
+import org.sonar.plugins.java.api.tree.ClassTree;
+import org.sonar.plugins.java.api.tree.ConditionalExpressionTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
+import org.sonar.plugins.java.api.tree.IfStatementTree;
+import org.sonar.plugins.java.api.tree.LambdaExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
+import org.sonar.plugins.java.api.tree.MethodTree;
+import org.sonar.plugins.java.api.tree.StatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
+import org.sonar.plugins.java.api.tree.UnaryExpressionTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
 /** {@code -1} from a search method used as an index without a check. */
@@ -36,7 +45,7 @@ public class NegativeIndexCheck extends DeepCheck {
   public void visitNode(Tree tree) {
     MethodInvocationTree mit = (MethodInvocationTree) tree;
     String search = search(mit);
-    if (search == null) {
+    if (search == null || foundForSure(mit)) {
       return;
     }
     Tree parent = mit.parent();
@@ -88,6 +97,77 @@ public class NegativeIndexCheck extends DeepCheck {
       return targets.get(0).display();
     }
     return null;
+  }
+
+  private static final Set<String> PRESENCE = Set.of("contains", "startsWith", "endsWith");
+  private static final Set<String> SEARCHES = Set.of("indexOf", "lastIndexOf");
+
+  /**
+   * {@code x.indexOf(y)} under an enclosing condition, or after an earlier guard that exits, which proves that x contains y.
+   * ponytail: x and y are not checked for reassignment between the guard and the search.
+   */
+  private static boolean foundForSure(MethodInvocationTree search) {
+    ExpressionTree x = Trees.receiver(search);
+    if (x == null || search.arguments().size() != 1) {
+      return false;
+    }
+    ExpressionTree y = search.arguments().get(0);
+    for (Tree child = search, p = search.parent(); p != null && !(p instanceof MethodTree || p instanceof LambdaExpressionTree
+      || p instanceof ClassTree); child = p, p = p.parent()) {
+      if (p instanceof IfStatementTree i && child != i.condition() && implies(i.condition(), child == i.thenStatement(), x, y)
+        || p instanceof ConditionalExpressionTree c && child != c.condition() && implies(c.condition(), child == c.trueExpression(), x, y)
+        || p instanceof BinaryExpressionTree b && p.is(Tree.Kind.CONDITIONAL_AND, Tree.Kind.CONDITIONAL_OR) && child == b.rightOperand()
+          && implies(b.leftOperand(), p.is(Tree.Kind.CONDITIONAL_AND), x, y)) {
+        return true;
+      }
+      if (p instanceof BlockTree block) {
+        for (StatementTree s : block.body()) {
+          if (s == child) {
+            break;
+          }
+          if (s instanceof IfStatementTree i && i.elseStatement() == null && exits(i.thenStatement()) && implies(i.condition(), false, x, y)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean exits(StatementTree s) {
+    if (s instanceof BlockTree b) {
+      return !b.body().isEmpty() && exits(b.body().get(b.body().size() - 1));
+    }
+    return s.is(Tree.Kind.RETURN_STATEMENT, Tree.Kind.THROW_STATEMENT, Tree.Kind.CONTINUE_STATEMENT, Tree.Kind.BREAK_STATEMENT);
+  }
+
+  /** Whether {@code cond} evaluating to {@code value} proves that x contains y. */
+  private static boolean implies(ExpressionTree cond, boolean value, ExpressionTree x, ExpressionTree y) {
+    cond = Trees.skip(cond);
+    if (cond.is(Tree.Kind.LOGICAL_COMPLEMENT)) {
+      return implies(((UnaryExpressionTree) cond).expression(), !value, x, y);
+    }
+    if (cond instanceof BinaryExpressionTree b) {
+      if (cond.is(value ? Tree.Kind.CONDITIONAL_AND : Tree.Kind.CONDITIONAL_OR)) {
+        return implies(b.leftOperand(), value, x, y) || implies(b.rightOperand(), value, x, y);
+      }
+      if (!(Trees.skip(b.leftOperand()) instanceof MethodInvocationTree m && SEARCHES.contains(Trees.name(m)) && calledWith(m, x, y))) {
+        return false;
+      }
+      Integer k = Trees.intConstant(b.rightOperand());
+      // found: >= 0, != -1, > -1; not found: < 0, == -1, <= -1
+      return k != null && (value
+        ? cond.is(Tree.Kind.GREATER_THAN_OR_EQUAL_TO) && k == 0 || cond.is(Tree.Kind.NOT_EQUAL_TO, Tree.Kind.GREATER_THAN) && k == -1
+        : cond.is(Tree.Kind.LESS_THAN) && k == 0 || cond.is(Tree.Kind.EQUAL_TO, Tree.Kind.LESS_THAN_OR_EQUAL_TO) && k == -1);
+    }
+    return value && cond instanceof MethodInvocationTree m && PRESENCE.contains(Trees.name(m))
+      && (calledWith(m, x, y) || m.arguments().size() == 2 && Trees.same(m.arguments().get(0), x) && Trees.same(m.arguments().get(1), y));
+  }
+
+  /** {@code x.m(y)}. */
+  private static boolean calledWith(MethodInvocationTree m, ExpressionTree x, ExpressionTree y) {
+    ExpressionTree r = Trees.receiver(m);
+    return r != null && m.arguments().size() == 1 && Trees.same(r, x) && Trees.same(m.arguments().get(0), y);
   }
 
   /** The value is an argument that the callee uses as an index without comparing it first. */

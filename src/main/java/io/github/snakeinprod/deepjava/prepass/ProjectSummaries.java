@@ -187,12 +187,15 @@ public class ProjectSummaries implements Supplier<Summaries> {
    * Identifies a pre-pass result: the settings it depends on and the compiled classes (path, count, total size and
    * latest modification time of the class files of each directory or jar).
    */
-  private String key() throws IOException {
+  String key() throws IOException {
     StringBuilder sb = new StringBuilder(CACHE_FORMAT + "|");
+    Set<String> multi = Set.of(DeepJavaPlugin.NULLABLE_ANNOTATIONS, DeepJavaPlugin.NULLABLE_IGNORED, DeepJavaPlugin.MODELS);
     for (String k : List.of(DeepJavaPlugin.MAX_STEPS, DeepJavaPlugin.MAX_TARGETS, DeepJavaPlugin.MIN_SITES, DeepJavaPlugin.MIN_RATIO,
       DeepJavaPlugin.NULLABLE_ANNOTATIONS, DeepJavaPlugin.NULLABLE_IGNORED, DeepJavaPlugin.DATA_SOURCES, DeepJavaPlugin.LOG_PARAMETERS_SAFE,
       DeepJavaPlugin.REFERENCE_PARITY, DeepJavaPlugin.MODELS)) {
-      sb.append(k).append('=').append(String.join(",", config.getStringArray(k))).append('|');
+      // getStringArray on a single-value property logs a warning on every scan
+      String v = multi.contains(k) ? String.join(",", config.getStringArray(k)) : config.get(k).orElse("");
+      sb.append(k).append('=').append(v).append('|');
     }
     List<Path> sorted = new ArrayList<>(binaries);
     sorted.sort(null);
