@@ -18,6 +18,7 @@ public class DeepJavaPlugin implements Plugin {
   public static final String LOG_PARAMETERS_SAFE = "sonar.deepjava.taint.logParametersSafe";
   public static final String REFERENCE_PARITY = "sonar.deepjava.referenceParity";
   public static final String PREPASS_CACHE = "sonar.deepjava.prepassCache";
+  public static final String CACHE = "sonar.deepjava.cache";
 
   @Override
   public void define(Context context) {
@@ -28,6 +29,8 @@ public class DeepJavaPlugin implements Plugin {
       DeepJavaCheckRegistrar.class,
       prop(MODELS, "Library models", "Extra JSON library model files (paths relative to the project base directory).", null).multiValues(true).build(),
       prop(CACHE_DIR, "Summary cache directory", "Where per-class summaries are cached between analyses. Default: ~/.sonar/deepjava-cache", null).build(),
+      prop(CACHE, "Summary cache on disk", "Read and write the per-class summary cache in the cache directory; false for CI runs "
+        + "that never keep it.", "true").type(org.sonar.api.PropertyType.BOOLEAN).build(),
       prop(MAX_STEPS, "Max steps per method", "Data-flow budget per method; methods over budget get no summary.", "20000").build(),
       prop(MAX_TARGETS, "Max virtual call targets", "Virtual calls with more implementations than this are ignored.", "8").build(),
       prop(MIN_SITES, "Statistics: min call sites", "A null returned by project code is reported only if the method has at least this many call sites.", "5").build(),

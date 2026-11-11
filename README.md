@@ -123,7 +123,8 @@ Full procedure with verification and rollback, written to be followed by a perso
 | Property | Default | Meaning |
 |----------|---------|---------|
 | `sonar.deepjava.models` | none | Extra library model JSON files (see below) |
-| `sonar.deepjava.cacheDir` | `~/.sonar/deepjava-cache` | Per-class summary cache; unchanged classes are not re-analysed |
+| `sonar.deepjava.cache` | `true` | Read and write the per-class summary cache on disk; `false` turns it off completely (no read, no write), for CI runs in throwaway containers that never keep the cache directory |
+| `sonar.deepjava.cacheDir` | `~/.sonar/deepjava-cache` | Where the per-class summary cache lives (relative paths from the project base directory); unchanged classes are not re-analysed. In CI, point it at a directory the CI cache keeps between runs (e.g. `-Dsonar.deepjava.cacheDir=.deepjava-cache`) instead of turning the cache off |
 | `sonar.deepjava.prepassCache` | `true` | Compute the project-wide pre-pass once per scanner JVM and reuse it for every module with the same binaries and settings; `false` recomputes it per module (for comparison only) |
 | `sonar.deepjava.maxStepsPerMethod` | `20000` | Data-flow budget per method |
 | `sonar.deepjava.maxVirtualTargets` | `8` | Virtual calls with more implementations are ignored |
@@ -181,10 +182,12 @@ annotated `@ConfigurationProperties`, are sources. Taint source kinds:
    Two data flows run per method: one for nullness, value use, locks and exceptions (branch-sensitive on null
    checks, with path conditions for "null only if an argument is null"), one for taint (labels for parameters,
    sources and call results; constant folding prunes dead branches; maps are tracked per constant key).
-   Results are cached by class file hash. The solved pre-pass is kept for the whole scanner run, keyed by
-   the settings and the class files (count, size, last modified) of all module binaries: every module after the
-   first reuses it (log line `Deep Java pre-pass: reused`), and new library jars or test class directories of a
-   module only extend it (`extended with N libraries and M test class directories`). Binaries outside
+   Results are cached by class file hash (`sonar.deepjava.cache`, `sonar.deepjava.cacheDir`); the cache file is
+   written in the background while the analysis goes on, only when it changed, to a temporary file that is then
+   renamed, so a reader never sees a partial file and the scanner waits for the write before it exits. The solved
+   pre-pass is kept for the whole scanner run, keyed by the settings and the class files (count, size, last
+   modified) of all module binaries: every module after the first reuses it (log line `Deep Java pre-pass:
+   reused`), and new library jars or test class directories of a module only extend it (`extended with N libraries and M test class directories`). Binaries outside
    `target/classes` and `build/classes/*/main` that the scanner does not list up front join when their module is
    analysed and cause one recomputation each.
 2. **Solving**: call targets are resolved by class hierarchy analysis over project types; summaries are

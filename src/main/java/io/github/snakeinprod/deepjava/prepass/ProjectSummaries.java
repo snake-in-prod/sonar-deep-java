@@ -57,6 +57,8 @@ public class ProjectSummaries implements Supplier<Summaries> {
   private boolean stale = true;
   private boolean extend;
   private boolean announce;
+  /** Keys the cache file holds (null: not read yet); an unchanged file is not written again. */
+  private Set<String> onDisk;
   private String key;
   private Summaries summaries;
 
@@ -96,6 +98,10 @@ public class ProjectSummaries implements Supplier<Summaries> {
 
   private boolean cacheEnabled() {
     return config.getBoolean(DeepJavaPlugin.PREPASS_CACHE).orElse(true);
+  }
+
+  private boolean diskCache() {
+    return config.getBoolean(DeepJavaPlugin.CACHE).orElse(true);
   }
 
   private boolean parity() {
@@ -231,8 +237,11 @@ public class ProjectSummaries implements Supplier<Summaries> {
     TaintModels taintModels = TaintModels.load(models);
     String version = CACHE_FORMAT + ":" + maxSteps + ":" + taintModels.digest();
 
-    Path cacheFile = cacheFile();
-    Map<String, ClassFacts> cache = scanned.isEmpty() ? readCache(cacheFile) : scanned;
+    Path cacheFile = diskCache() ? cacheFile() : null;
+    Map<String, ClassFacts> cache = !scanned.isEmpty() ? scanned : cacheFile != null ? readCache(cacheFile) : new HashMap<>();
+    if (onDisk == null && cacheFile != null) {
+      onDisk = Set.copyOf(cache.keySet());
+    }
     Map<String, ClassFacts> used = new HashMap<>();
     Map<String, ClassFacts> byName = new HashMap<>();
     int[] hits = {0};
@@ -249,7 +258,10 @@ public class ProjectSummaries implements Supplier<Summaries> {
     });
     long loaded = System.currentTimeMillis();
     scanned.putAll(used);
-    writeCache(cacheFile, used);
+    if (cacheFile != null && !used.keySet().equals(onDisk)) {
+      onDisk = Set.copyOf(used.keySet());
+      writeCacheInBackground(cacheFile, used);
+    }
 
     // test classes (parity mode) are added by extend(), like those of later modules
     Summaries s = new Summaries(byName.values(), List.of(), new Hierarchy(byName, List.copyOf(libraries)), LibraryModels.load(models), thresholds,
@@ -408,16 +420,85 @@ public class ProjectSummaries implements Supplier<Summaries> {
     }
   }
 
+  private static Thread writer;
+
+  /**
+   * Writes the cache while the analysis goes on. A shutdown hook waits for the write, so the scanner JVM does not exit
+   * before the file is complete; writes are serialised so that the last one wins.
+   */
+  static void writeCacheInBackground(Path file, Map<String, ClassFacts> entries) {
+    synchronized (ProjectSummaries.class) {
+      awaitCacheWrite();
+      Thread[] hook = {null};
+      Thread t = new Thread(() -> {
+        writeCache(file, entries);
+        try {
+          Runtime.getRuntime().removeShutdownHook(hook[0]);
+        } catch (IllegalStateException shuttingDown) {
+          // the hook is waiting for us
+        }
+      }, "deepjava-cache-writer");
+      t.setDaemon(true);
+      hook[0] = new Thread(() -> join(t), "deepjava-cache-wait");
+      Runtime.getRuntime().addShutdownHook(hook[0]);
+      writer = t;
+      t.start();
+    }
+  }
+
+  /** Waits for the background cache write, if any. */
+  static void awaitCacheWrite() {
+    synchronized (ProjectSummaries.class) {
+      if (writer != null) {
+        join(writer);
+        writer = null;
+      }
+    }
+  }
+
+  private static void join(Thread t) {
+    try {
+      t.join();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  /**
+   * Writes to a temporary file and renames it atomically: a reader sees the old file or the complete new one, never a
+   * partial one. Equal strings are written once (the scanner creates many copies of each call key).
+   */
   static void writeCache(Path file, Map<String, ClassFacts> entries) {
+    Path tmp = null;
     try {
       Files.createDirectories(file.getParent());
-      Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-      try (ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(Files.newOutputStream(tmp)))) {
+      tmp = Files.createTempFile(file.getParent(), file.getFileName().toString(), ".tmp");
+      try (ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(Files.newOutputStream(tmp), 1 << 16)) {
+        private final Map<String, String> strings = new HashMap<>();
+
+        {
+          enableReplaceObject(true);
+        }
+
+        @Override
+        protected Object replaceObject(Object o) {
+          return o instanceof String s ? strings.computeIfAbsent(s, k -> k) : o;
+        }
+      }) {
         out.writeObject(new HashMap<>(entries));
       }
-      Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-    } catch (IOException e) {
-      LOG.warn("Deep Java: cannot write cache {}: {}", file, e.getMessage());
+      Files.move(tmp, file, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+      tmp = null;
+    } catch (IOException | RuntimeException e) {
+      LOG.warn("Deep Java: cannot write cache {}: {}", file, e.toString());
+    } finally {
+      if (tmp != null) {
+        try {
+          Files.deleteIfExists(tmp);
+        } catch (IOException ignored) {
+          // best effort
+        }
+      }
     }
   }
 
