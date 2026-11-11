@@ -24,7 +24,12 @@ final class TaintSolver {
   private static final Set<String> REMOTE = Set.of("USER", "COOKIE", "JWT", "NET", "MSG");
 
   /** A parameter of a method reaches a sink (possibly in a callee). */
-  private record SinkFlow(int param, Sink sink, ClassFacts where, String via) {
+  record SinkFlow(int param, Sink sink, ClassFacts where, String via) {
+    /** Hashes the class by name; the generated hash walked all facts of the class. */
+    @Override
+    public int hashCode() {
+      return java.util.Objects.hash(param, sink, where.name(), via);
+    }
   }
 
   private final Summaries s;

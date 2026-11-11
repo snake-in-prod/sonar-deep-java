@@ -21,6 +21,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -46,6 +47,9 @@ public final class TaintModels {
   private final List<Pattern> sanitizers = new ArrayList<>();
   private final List<Pattern> wildcardSources = new ArrayList<>();
   private final List<String> wildcardSourceKinds = new ArrayList<>();
+  // wildcard answers per owner#name: the scanners ask for every call site, regex matching each time dominated the taint pass
+  private final Map<String, String> wildcardSourceCache = new ConcurrentHashMap<>();
+  private final Map<String, Boolean> sanitizerCache = new ConcurrentHashMap<>();
   private Pattern secretNames = Pattern.compile("(?!)");
   private final StringBuilder digestInput = new StringBuilder();
 
@@ -132,17 +136,22 @@ public final class TaintModels {
   }
 
   public String source(String owner, String name) {
-    String kind = sources.get(owner + "#" + name);
-    if (kind != null) {
+    String key = owner + "#" + name;
+    String kind = sources.get(key);
+    if (kind != null || wildcardSources.isEmpty()) {
       return kind;
     }
-    String key = owner + "#" + name;
+    String w = wildcardSourceCache.computeIfAbsent(key, this::wildcardSource);
+    return w.isEmpty() ? null : w;
+  }
+
+  private String wildcardSource(String key) {
     for (int i = 0; i < wildcardSources.size(); i++) {
       if (wildcardSources.get(i).matcher(key).matches()) {
         return wildcardSourceKinds.get(i);
       }
     }
-    return null;
+    return "";
   }
 
   public SinkModel sink(String owner, String name) {
@@ -156,8 +165,7 @@ public final class TaintModels {
   }
 
   public boolean isSanitizer(String owner, String name) {
-    String key = owner + "#" + name;
-    return sanitizers.stream().anyMatch(p -> p.matcher(key).matches());
+    return sanitizerCache.computeIfAbsent(owner + "#" + name, key -> sanitizers.stream().anyMatch(p -> p.matcher(key).matches()));
   }
 
   public String fieldAnnotationSource(String annotation) {
